@@ -42,13 +42,28 @@ Audio Commands:
   audio-share <id>  Share audio overview
 
 Generation Commands:
-  generate-guide <id>  Generate notebook guide ✅
-  generate-outline <id>  Generate content outline ⚠️
-  generate-section <id>  Generate new section ⚠️
-  generate-chat <id> <prompt>  Free-form chat ⚠️
-  chat <id>  Interactive chat session ⚠️
+  generate-guide <id>  Generate notebook guide
+  generate-outline <id>  Generate content outline
+  generate-section <id>  Generate new section
+  generate-chat <id> <prompt>  Free-form chat
+  generate-magic <id> <source-ids...>  Generate magic view synthesis
+  chat <id>  Interactive chat session
 
-⚠️ = Currently broken (API format changes)
+Content Transformation Commands:
+  summarize <id> <source-ids...>    Summarize content from sources
+  study-guide <id> <source-ids...>  Generate study guide
+  faq <id> <source-ids...>          Generate FAQ from sources
+  briefing-doc <id> <source-ids...> Create briefing document
+  rephrase <id> <source-ids...>     Rephrase content
+  expand <id> <source-ids...>       Expand on content
+  critique <id> <source-ids...>     Provide critique of content
+  brainstorm <id> <source-ids...>   Brainstorm ideas from sources
+  verify <id> <source-ids...>       Verify facts in sources
+  explain <id> <source-ids...>      Explain concepts from sources
+  outline <id> <source-ids...>      Create outline from sources
+  mindmap <id> <source-ids...>      Generate text-based mindmap
+  timeline <id> <source-ids...>     Create timeline from sources
+  toc <id> <source-ids...>          Generate table of contents
 
 Other Commands:
   auth              Setup authentication
@@ -259,6 +274,76 @@ nlm audio-share <notebook-id>
 
 # Share audio overview (public)
 nlm audio-share <notebook-id> --public
+```
+
+### Generation Commands
+
+```bash
+# Generate a notebook guide (short summary)
+nlm generate-guide <notebook-id>
+
+# Generate a comprehensive outline
+nlm generate-outline <notebook-id>
+
+# Generate a new content section
+nlm generate-section <notebook-id>
+
+# Free-form chat with your notebook
+nlm generate-chat <notebook-id> "What are the main themes?"
+
+# Interactive chat session
+nlm chat <notebook-id>
+
+# Generate a magic view synthesis from specific sources
+nlm generate-magic <notebook-id> <source-id-1> <source-id-2>
+```
+
+### Content Transformation
+
+Transform your sources into different formats:
+
+```bash
+# Summarize content from sources
+nlm summarize <notebook-id> <source-id>
+
+# Generate a study guide with key concepts and review questions
+nlm study-guide <notebook-id> <source-id>
+
+# Generate FAQ from sources
+nlm faq <notebook-id> <source-id>
+
+# Create a professional briefing document
+nlm briefing-doc <notebook-id> <source-id>
+
+# Rephrase content in different words
+nlm rephrase <notebook-id> <source-id>
+
+# Expand on content with more detail
+nlm expand <notebook-id> <source-id>
+
+# Get a critique of the content
+nlm critique <notebook-id> <source-id>
+
+# Brainstorm ideas from sources
+nlm brainstorm <notebook-id> <source-id>
+
+# Verify facts in sources
+nlm verify <notebook-id> <source-id>
+
+# Explain concepts in accessible language
+nlm explain <notebook-id> <source-id>
+
+# Create a structured outline
+nlm outline <notebook-id> <source-id>
+
+# Generate a text-based mindmap
+nlm mindmap <notebook-id> <source-id>
+
+# Create a timeline of events
+nlm timeline <notebook-id> <source-id>
+
+# Generate table of contents
+nlm toc <notebook-id> <source-id>
 ```
 
 ### Batch Mode
