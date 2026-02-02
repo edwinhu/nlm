@@ -3,6 +3,7 @@ package rpc
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/davecgh/go-spew/spew"
 	"github.com/tmc/nlm/internal/batchexecute"
@@ -101,13 +102,15 @@ type Client struct {
 }
 
 // New creates a new NotebookLM RPC client
-// New creates a new NotebookLM RPC client
 func New(authToken, cookies string, options ...batchexecute.Option) *Client {
+	debugEnabled := os.Getenv("NLM_DEBUG") == "true"
+
 	config := batchexecute.Config{
 		Host:      "notebooklm.google.com",
 		App:       "LabsTailwindUi",
 		AuthToken: authToken,
 		Cookies:   cookies,
+		Debug:     debugEnabled,
 		Headers: map[string]string{
 			"content-type":    "application/x-www-form-urlencoded;charset=UTF-8",
 			"origin":          "https://notebooklm.google.com",
@@ -119,12 +122,11 @@ func New(authToken, cookies string, options ...batchexecute.Option) *Client {
 			"pragma":          "no-cache",
 		},
 		URLParams: map[string]string{
-			// Update to latest build version (February 2026)
-			"bl":    "boq_labs-tailwind-frontend_20260201.00_p0",
+			// Match browser build version for compatibility
+			"bl":    "boq_labs-tailwind-frontend_20260129.10_p0",
 			"f.sid": "-7121977511756781186",
 			"hl":    "en",
-			// Omit rt parameter for JSON array format (easier to parse)
-			// "rt":    "c",  // Use "c" for chunked format, omit for JSON array
+			"rt":    "c", // Use chunked format like browser
 		},
 	}
 	return &Client{

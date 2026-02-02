@@ -300,9 +300,11 @@ service LabsTailwindOrchestrationService {
         option (rpc_id) = "yR9Yof";
         option (arg_format) = "[%source_id%]";
     }
+    // DeleteSources requires NotebookID in source-path URL param and each source_id
+    // wrapped in its own array: [[[source_id1], [source_id2], ...]]
     rpc DeleteSources(DeleteSourcesRequest) returns (google.protobuf.Empty) {
         option (rpc_id) = "tGMBJ";
-        option (arg_format) = "[[%source_ids%]]";
+        option (arg_format) = "[[[%source_ids%]]]"; // Each source_id in separate array
     }
     rpc DiscoverSources(DiscoverSourcesRequest) returns (DiscoverSourcesResponse) {
         option (rpc_id) = "qXyaNe";

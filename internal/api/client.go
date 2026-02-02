@@ -167,11 +167,24 @@ func (c *Client) AddSources(projectID string, sources []*pb.SourceInput) (*pb.Pr
 }
 
 func (c *Client) DeleteSources(projectID string, sourceIDs []string) error {
-	req := &pb.DeleteSourcesRequest{
-		SourceIds: sourceIDs,
+	// Use direct RPC call to ensure NotebookID is set for source-path parameter.
+	// The orchestration service client doesn't pass NotebookID, which causes
+	// the source-path URL parameter to be missing the notebook ID.
+	//
+	// Args format: [[[source_id1], [source_id2], ...]]
+	// Each source ID is wrapped in its own array, then all wrapped in another array.
+	// This differs from the proto arg_format which shows [[%source_ids%]].
+	var innerArgs []interface{}
+	for _, id := range sourceIDs {
+		innerArgs = append(innerArgs, []interface{}{id})
 	}
-	ctx := context.Background()
-	_, err := c.orchestrationService.DeleteSources(ctx, req)
+	call := rpc.Call{
+		ID:         "tGMBJ",
+		NotebookID: projectID,
+		Args:       []interface{}{innerArgs},
+	}
+
+	_, err := c.rpc.Do(call)
 	if err != nil {
 		return fmt.Errorf("delete sources: %w", err)
 	}
