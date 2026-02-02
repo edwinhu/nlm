@@ -20,6 +20,7 @@ import (
 	"github.com/tmc/nlm/gen/service"
 	"github.com/tmc/nlm/internal/batchexecute"
 	"github.com/tmc/nlm/internal/rpc"
+	"github.com/tmc/nlm/internal/rpc/grpcendpoint"
 )
 
 type Notebook = pb.Project
@@ -28,6 +29,7 @@ type Note = pb.Source
 // Client handles NotebookLM API interactions.
 type Client struct {
 	rpc                  *rpc.Client
+	grpcClient           *grpcendpoint.Client
 	orchestrationService *service.LabsTailwindOrchestrationServiceClient
 	sharingService       *service.LabsTailwindSharingServiceClient
 	guidebooksService    *service.LabsTailwindGuidebooksServiceClient
@@ -52,6 +54,7 @@ func New(authToken, cookies string, opts ...batchexecute.Option) *Client {
 	// Create the client
 	client := &Client{
 		rpc:                  rpc.New(authToken, cookies, opts...),
+		grpcClient:           grpcendpoint.NewClient(authToken, cookies),
 		orchestrationService: service.NewLabsTailwindOrchestrationServiceClient(authToken, cookies, opts...),
 		sharingService:       service.NewLabsTailwindSharingServiceClient(authToken, cookies, opts...),
 		guidebooksService:    service.NewLabsTailwindGuidebooksServiceClient(authToken, cookies, opts...),
@@ -1798,6 +1801,38 @@ func (c *Client) GenerateFreeFormStreamed(projectID string, prompt string, sourc
 		}
 	}
 
+	// Try using the gRPC endpoint for chat (works better with sources)
+	if len(sourceIDs) > 0 {
+		if c.config.Debug {
+			fmt.Printf("DEBUG: Trying gRPC endpoint for chat with %d sources\n", len(sourceIDs))
+		}
+
+		grpcReq := grpcendpoint.Request{
+			Endpoint: "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GenerateFreeFormStreamed",
+			Body:     grpcendpoint.BuildChatRequestWithProject(sourceIDs, prompt, projectID),
+		}
+
+		respBytes, err := c.grpcClient.Execute(grpcReq)
+		if err != nil {
+			if c.config.Debug {
+				fmt.Printf("DEBUG: gRPC endpoint failed: %v, trying batchexecute fallback\n", err)
+			}
+			// Fall through to batchexecute
+		} else {
+			// Parse the gRPC response
+			if c.config.Debug {
+				fmt.Printf("DEBUG: gRPC response: %s\n", string(respBytes))
+			}
+			// For now, extract text from response and return
+			response := &pb.GenerateFreeFormStreamedResponse{
+				Chunk:   string(respBytes),
+				IsFinal: true,
+			}
+			return response, nil
+		}
+	}
+
+	// Fallback to batchexecute
 	req := &pb.GenerateFreeFormStreamedRequest{
 		ProjectId: projectID,
 		Prompt:    prompt,

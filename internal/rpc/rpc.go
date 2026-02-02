@@ -119,8 +119,8 @@ func New(authToken, cookies string, options ...batchexecute.Option) *Client {
 			"pragma":          "no-cache",
 		},
 		URLParams: map[string]string{
-			// Update to January 2025 build version
-			"bl":    "boq_labs-tailwind-frontend_20250129.00_p0",
+			// Update to latest build version (February 2026)
+			"bl":    "boq_labs-tailwind-frontend_20260201.00_p0",
 			"f.sid": "-7121977511756781186",
 			"hl":    "en",
 			// Omit rt parameter for JSON array format (easier to parse)

@@ -42,9 +42,13 @@ Audio Commands:
   audio-share <id>  Share audio overview
 
 Generation Commands:
-  generate-guide <id>  Generate notebook guide
-  generate-outline <id>  Generate content outline
-  generate-section <id>  Generate new section
+  generate-guide <id>  Generate notebook guide ✅
+  generate-outline <id>  Generate content outline ⚠️
+  generate-section <id>  Generate new section ⚠️
+  generate-chat <id> <prompt>  Free-form chat ⚠️
+  chat <id>  Interactive chat session ⚠️
+
+⚠️ = Currently broken (API format changes)
 
 Other Commands:
   auth              Setup authentication

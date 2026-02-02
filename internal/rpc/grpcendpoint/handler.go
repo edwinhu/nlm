@@ -188,20 +188,45 @@ func generateRequestID() int {
 }
 
 // BuildChatRequest builds a request for the GenerateFreeFormStreamed endpoint
+// Captured format from browser (2026-02-01):
+// [null, "<inner_json>"] where inner_json is:
+// [
+//   [[[source_id_1]], [[source_id_2]]],  // [0] Sources - each wrapped as [[id]]
+//   "prompt",                            // [1] User question
+//   [],                                  // [2] Chat history (empty for first message)
+//   [2, null, [1], [1]],                 // [3] Config options
+//   "session_uuid",                      // [4] Chat session ID
+//   null,                                // [5]
+//   null,                                // [6]
+//   "project_id",                        // [7] Notebook/project ID
+//   1                                    // [8] Flag
+// ]
 func BuildChatRequest(sourceIDs []string, prompt string) interface{} {
-	// Build the array of source IDs
-	sources := make([][]string, len(sourceIDs))
+	// Build source array where each source is wrapped as [[id]]
+	sources := make([]interface{}, len(sourceIDs))
 	for i, id := range sourceIDs {
-		sources[i] = []string{id}
+		sources[i] = []interface{}{[]interface{}{id}}
 	}
 
-	// Return the formatted request
-	// Format: [null, "[[sources], prompt, null, [2]]"]
+	// Generate a session UUID
+	sessionID := generateUUID()
+
+	// Config options: [2, null, [1], [1]]
+	config := []interface{}{2, nil, []interface{}{1}, []interface{}{1}}
+
+	// Note: For the gRPC endpoint, we don't have the project ID in the function signature
+	// This needs to be passed in or extracted from a different source
+	// For now, we'll leave it empty - the caller should use BuildChatRequestWithProject
 	innerArray := []interface{}{
-		sources,
-		prompt,
-		nil,
-		[]int{2},
+		sources,         // [0] Sources as [[[id1]], [[id2]], ...]
+		prompt,          // [1] The prompt/question
+		[]interface{}{}, // [2] Chat history (empty)
+		config,          // [3] Config options
+		sessionID,       // [4] Chat session UUID
+		nil,             // [5] null
+		nil,             // [6] null
+		"",              // [7] Project ID - needs to be set by caller
+		1,               // [8] Flag
 	}
 
 	// Marshal the inner array to JSON string
@@ -211,4 +236,49 @@ func BuildChatRequest(sourceIDs []string, prompt string) interface{} {
 		nil,
 		string(innerJSON),
 	}
+}
+
+// BuildChatRequestWithProject builds a request for the GenerateFreeFormStreamed endpoint with project ID
+func BuildChatRequestWithProject(sourceIDs []string, prompt string, projectID string) interface{} {
+	// Build source array where each source is wrapped as [[id]]
+	sources := make([]interface{}, len(sourceIDs))
+	for i, id := range sourceIDs {
+		sources[i] = []interface{}{[]interface{}{id}}
+	}
+
+	// Generate a session UUID
+	sessionID := generateUUID()
+
+	// Config options: [2, null, [1], [1]]
+	config := []interface{}{2, nil, []interface{}{1}, []interface{}{1}}
+
+	innerArray := []interface{}{
+		sources,         // [0] Sources as [[[id1]], [[id2]], ...]
+		prompt,          // [1] The prompt/question
+		[]interface{}{}, // [2] Chat history (empty)
+		config,          // [3] Config options
+		sessionID,       // [4] Chat session UUID
+		nil,             // [5] null
+		nil,             // [6] null
+		projectID,       // [7] Project/notebook ID
+		1,               // [8] Flag
+	}
+
+	// Marshal the inner array to JSON string
+	innerJSON, _ := json.Marshal(innerArray)
+
+	return []interface{}{
+		nil,
+		string(innerJSON),
+	}
+}
+
+// generateUUID generates a simple UUID v4
+func generateUUID() string {
+	// Simple UUID generation - in production use github.com/google/uuid
+	b := make([]byte, 16)
+	for i := range b {
+		b[i] = byte(requestCounter + i)
+	}
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
 }
