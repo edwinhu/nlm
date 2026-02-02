@@ -228,16 +228,60 @@ func (c *Client) CheckSourceFreshness(sourceID string) (*pb.CheckSourceFreshness
 }
 
 func (c *Client) ActOnSources(projectID string, action string, sourceIDs []string) error {
-	req := &pb.ActOnSourcesRequest{
-		ProjectId: projectID,
-		Action:    action,
-		SourceIds: sourceIDs,
+	// The UivNle RPC endpoint for ActOnSources was deprecated.
+	// Use GenerateFreeFormStreamed with action-specific prompts instead.
+	prompts := map[string]string{
+		"rephrase": `Rephrase the content from the selected sources in a different way while preserving the original meaning. Use varied vocabulary, sentence structures, and presentation styles.`,
+
+		"expand": `Expand on the content from the selected sources. Provide more detail, context, examples, and elaboration on the key concepts and ideas presented.`,
+
+		"summarize": `Summarize the key points from the selected sources. Create a concise summary that captures the main ideas, arguments, and conclusions in a clear and organized manner.`,
+
+		"critique": `Provide a thoughtful critique of the content from the selected sources. Analyze the strengths and weaknesses, evaluate the arguments and evidence, and offer constructive feedback.`,
+
+		"brainstorm": `Brainstorm ideas inspired by the content from the selected sources. Generate creative connections, new perspectives, potential applications, and related concepts.`,
+
+		"verify": `Verify the facts and claims made in the selected sources. Cross-reference information, identify any inconsistencies, and assess the reliability of the content.`,
+
+		"explain": `Explain the concepts from the selected sources in a clear, accessible way. Break down complex ideas, provide definitions, and use examples to aid understanding.`,
+
+		"outline": `Create a structured outline from the selected sources. Organize the main topics, subtopics, and key points in a clear hierarchical format.`,
+
+		"study_guide": `Generate a comprehensive study guide from the selected sources. Include:
+1. Key concepts and definitions
+2. Important facts to remember
+3. Review questions
+4. Summary of main topics
+5. Study tips and focus areas`,
+
+		"faq": `Generate a Frequently Asked Questions (FAQ) document from the selected sources. Create relevant questions that readers might have and provide clear, informative answers based on the content.`,
+
+		"briefing_doc": `Create a professional briefing document from the selected sources. Include:
+1. Executive summary
+2. Key findings
+3. Important details
+4. Recommendations or action items
+5. Background context`,
+
+		"interactive_mindmap": `Create a text-based mindmap representation of the content from the selected sources. Show the main topic at the center with branches to subtopics, key concepts, and their relationships.`,
+
+		"timeline": `Create a timeline from the selected sources. List events, milestones, or developments in chronological order with dates and brief descriptions.`,
+
+		"table_of_contents": `Generate a table of contents from the selected sources. List the main sections, chapters, or topics with their hierarchical structure.`,
 	}
-	ctx := context.Background()
-	_, err := c.orchestrationService.ActOnSources(ctx, req)
+
+	prompt, ok := prompts[action]
+	if !ok {
+		prompt = fmt.Sprintf("Perform the '%s' action on the content from the selected sources.", action)
+	}
+
+	resp, err := c.GenerateFreeFormStreamed(projectID, prompt, sourceIDs)
 	if err != nil {
 		return fmt.Errorf("act on sources: %w", err)
 	}
+
+	// Print the response
+	fmt.Println(resp.Chunk)
 	return nil
 }
 
@@ -1710,40 +1754,72 @@ func (c *Client) GenerateNotebookGuide(projectID string) (*pb.GenerateNotebookGu
 }
 
 func (c *Client) GenerateMagicView(projectID string, sourceIDs []string) (*pb.GenerateMagicViewResponse, error) {
-	req := &pb.GenerateMagicViewRequest{
-		ProjectId: projectID,
-		SourceIds: sourceIDs,
-	}
-	ctx := context.Background()
-	magicView, err := c.orchestrationService.GenerateMagicView(ctx, req)
+	// The eUBXe RPC endpoint for GenerateMagicView was deprecated.
+	// Use GenerateFreeFormStreamed with a magic view prompt instead.
+	magicPrompt := `Create a "magic view" synthesis of the selected sources. This should:
+1. Identify the most interesting and surprising connections between the sources
+2. Highlight key insights that emerge from combining these materials
+3. Present a creative, engaging summary that captures the essence of the content
+4. Draw out themes, patterns, and relationships across the sources
+5. Be written in an engaging, accessible style
+
+Focus on making the content come alive with fresh perspectives and connections.`
+
+	resp, err := c.GenerateFreeFormStreamed(projectID, magicPrompt, sourceIDs)
 	if err != nil {
 		return nil, fmt.Errorf("generate magic view: %w", err)
 	}
-	return magicView, nil
+
+	// Return with the response content as the title (the original structure had Title and Items)
+	return &pb.GenerateMagicViewResponse{
+		Title: resp.Chunk,
+		Items: []*pb.MagicViewItem{},
+	}, nil
 }
 
 func (c *Client) GenerateOutline(projectID string) (*pb.GenerateOutlineResponse, error) {
-	req := &pb.GenerateOutlineRequest{
-		ProjectId: projectID,
-	}
-	ctx := context.Background()
-	outline, err := c.orchestrationService.GenerateOutline(ctx, req)
+	// The lCjAd RPC endpoint for GenerateOutline was deprecated.
+	// Use GenerateFreeFormStreamed with an outline prompt instead.
+	outlinePrompt := `Generate a comprehensive outline of all the content in this notebook. The outline should:
+1. List the main topics and themes covered
+2. Include key subtopics under each main topic
+3. Be structured with clear hierarchy (use Roman numerals, letters, numbers)
+4. Capture the most important facts, concepts, and arguments from the sources
+
+Format the outline in a clear, well-organized structure that could serve as a table of contents or study guide.`
+
+	// Use GenerateFreeFormStreamed which now works with the correct gRPC format
+	resp, err := c.GenerateFreeFormStreamed(projectID, outlinePrompt, nil)
 	if err != nil {
 		return nil, fmt.Errorf("generate outline: %w", err)
 	}
-	return outline, nil
+
+	// Convert the chat response to outline response format
+	return &pb.GenerateOutlineResponse{
+		Content: resp.Chunk,
+	}, nil
 }
 
 func (c *Client) GenerateSection(projectID string) (*pb.GenerateSectionResponse, error) {
-	req := &pb.GenerateSectionRequest{
-		ProjectId: projectID,
-	}
-	ctx := context.Background()
-	section, err := c.orchestrationService.GenerateSection(ctx, req)
+	// The cSX5Zc RPC endpoint for GenerateSection was deprecated.
+	// Use GenerateFreeFormStreamed with a section prompt instead.
+	sectionPrompt := `Generate a new section of content based on the sources in this notebook. The section should:
+1. Introduce a key concept or theme from the sources
+2. Provide detailed explanation with supporting information
+3. Include relevant examples or evidence from the sources
+4. Be well-structured with clear paragraphs
+5. Be suitable for inclusion in a longer document or report
+
+Write the section in a clear, informative style.`
+
+	resp, err := c.GenerateFreeFormStreamed(projectID, sectionPrompt, nil)
 	if err != nil {
 		return nil, fmt.Errorf("generate section: %w", err)
 	}
-	return section, nil
+
+	return &pb.GenerateSectionResponse{
+		Content: resp.Chunk,
+	}, nil
 }
 
 func (c *Client) StartDraft(projectID string) (*pb.StartDraftResponse, error) {
