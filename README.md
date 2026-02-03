@@ -65,6 +65,11 @@ Content Transformation Commands:
   timeline <id> <source-ids...>     Create timeline from sources
   toc <id> <source-ids...>          Generate table of contents
 
+Research Commands:
+  research <query>  Research a topic and import sources
+    --notebook <id>  Notebook ID (required)
+    --deep           Deep research mode (optional)
+
 Other Commands:
   auth              Setup authentication
   batch <commands>  Execute multiple commands in batch
@@ -242,6 +247,48 @@ nlm rm-source <notebook-id> <source-id>
 
 # Add a YouTube video as a source
 nlm add <notebook-id> https://www.youtube.com/watch?v=dQw4w9WgXcQ
+```
+
+### Research
+
+Discover and import sources on any topic directly from the web:
+
+```bash
+# Research a topic and auto-import sources to notebook
+nlm research --notebook <notebook-id> "artificial intelligence trends 2024"
+
+# Use deep research mode for more thorough results
+nlm research --notebook <notebook-id> --deep "climate change policy"
+```
+
+The research command will:
+1. Search the web for relevant sources on your topic
+2. Display found sources with titles, descriptions, and URLs
+3. Automatically import all sources into your notebook
+
+Example output:
+```
+Researching "renewable energy trends 2024" (fast mode)...
+Task ID: 4fbd7414-34d1-49b7-bff0-db9533ef5fd6
+
+✅ Research complete!
+
+📋 Summary: These selections illustrate the global surge in renewable capacity...
+
+📚 Found 10 sources:
+
+1. Executive summary – Renewables 2024 – Analysis - IEA
+   This report explains 2024's record-breaking capacity and the tripling goal gap.
+   🔗 https://www.iea.org/reports/renewables-2024/executive-summary
+
+2. Six highlights of the global energy transition in 2024 - Ember
+   Insights into the emergent 'Age of Electricity' and solar-battery synergy.
+   🔗 https://ember-energy.org/latest-insights/...
+
+...
+
+Importing sources to notebook...
+✅ Sources imported to notebook.
 ```
 
 ### Note Operations
