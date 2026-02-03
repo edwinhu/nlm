@@ -53,6 +53,12 @@ const (
 	RPCGenerateFreeFormStreamed  = "BD"     // GenerateFreeFormStreamed (from Gemini's analysis)
 	RPCGenerateReportSuggestions = "GHsKob" // GenerateReportSuggestions
 
+	// NotebookLM service - Research operations
+	RPCStartFastResearch     = "Ljjv0c" // StartFastResearch
+	RPCStartDeepResearch     = "QA9ei"  // StartDeepResearch
+	RPCPollResearchResults   = "e3bVqc" // PollResearchResults
+	RPCImportResearchSources = "LBwxtb" // ImportResearchSources
+
 	// NotebookLM service - Account operations
 	RPCGetOrCreateAccount = "ZwVcOc" // GetOrCreateAccount
 	RPCMutateAccount      = "hT54vc" // MutateAccount

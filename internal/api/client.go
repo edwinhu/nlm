@@ -2121,3 +2121,228 @@ func extractYouTubeVideoID(urlStr string) (string, error) {
 
 	return "", fmt.Errorf("unsupported YouTube URL format")
 }
+
+// Research operations
+
+// ResearchSource represents a source found during research
+type ResearchSource struct {
+	ID          string
+	Title       string
+	URL         string
+	Description string
+	Type        int // 1=web, 2=doc, 3=slides, 5=report, 8=sheets
+}
+
+// ResearchResults represents the results of a research operation
+type ResearchResults struct {
+	TaskID  string
+	Status  string // "pending", "complete"
+	Sources []ResearchSource
+	Summary string // Summary of research findings
+}
+
+// StartResearch initiates a research operation for the given query.
+// If deep=true, uses deep research (more thorough, more sources).
+// If deep=false, uses fast research (quicker, fewer sources).
+// Returns the task ID for polling results.
+func (c *Client) StartResearch(projectID, query string, deep bool) (string, error) {
+	var call rpc.Call
+
+	if deep {
+		// Use deep research RPC
+		call = rpc.Call{
+			ID:         rpc.RPCStartDeepResearch,
+			NotebookID: projectID,
+			Args: []interface{}{
+				nil,                     // Reserved
+				[]interface{}{1},        // Source types [1] = Web
+				[]interface{}{query, 1}, // Query tuple
+				5,                       // Research depth parameter
+				projectID,               // Project ID
+			},
+		}
+	} else {
+		// Use fast research RPC
+		call = rpc.Call{
+			ID:         rpc.RPCStartFastResearch,
+			NotebookID: projectID,
+			Args: []interface{}{
+				[]interface{}{query, 1}, // Query tuple with source type 1 (Web)
+				nil,                     // Reserved
+				1,                       // Source type flag
+				projectID,               // Project ID
+			},
+		}
+	}
+
+	resp, err := c.rpc.Do(call)
+	if err != nil {
+		return "", fmt.Errorf("start research: %w", err)
+	}
+
+	// Parse response to extract task ID
+	// Response format: ["task_id"]
+	var data []interface{}
+	if err := json.Unmarshal(resp, &data); err != nil {
+		return "", fmt.Errorf("parse research response: %w", err)
+	}
+
+	if len(data) > 0 {
+		if taskID, ok := data[0].(string); ok {
+			return taskID, nil
+		}
+	}
+
+	return "", fmt.Errorf("could not extract task ID from research response")
+}
+
+// PollResearchResults polls for research results.
+// Returns the current status and any sources found so far.
+func (c *Client) PollResearchResults(projectID string) (*ResearchResults, error) {
+	call := rpc.Call{
+		ID:         rpc.RPCPollResearchResults,
+		NotebookID: projectID,
+		Args: []interface{}{
+			nil,       // Reserved
+			nil,       // Reserved
+			projectID, // Project ID
+		},
+	}
+
+	resp, err := c.rpc.Do(call)
+	if err != nil {
+		return nil, fmt.Errorf("poll research results: %w", err)
+	}
+
+	// Parse response
+	var data []interface{}
+	if err := json.Unmarshal(resp, &data); err != nil {
+		return nil, fmt.Errorf("parse poll response: %w", err)
+	}
+
+	return parseResearchResultsFromData(data), nil
+}
+
+// ImportResearchSources imports sources from research results into the notebook.
+// Each source needs URL and Title for the import format.
+func (c *Client) ImportResearchSources(projectID, taskID string, sources []ResearchSource) error {
+	// Convert sources to the required format:
+	// [null, null, [url, title], null, null, null, null, null, null, null, 2]
+	sourceArray := make([]interface{}, len(sources))
+	for i, s := range sources {
+		sourceArray[i] = []interface{}{
+			nil,
+			nil,
+			[]interface{}{s.URL, s.Title},
+			nil,
+			nil,
+			nil,
+			nil,
+			nil,
+			nil,
+			nil,
+			2,
+		}
+	}
+
+	call := rpc.Call{
+		ID:         rpc.RPCImportResearchSources,
+		NotebookID: projectID,
+		Args: []interface{}{
+			nil,              // Reserved
+			[]interface{}{1}, // Source types [1] = Web
+			taskID,           // Task ID
+			projectID,        // Project ID
+			sourceArray,      // Sources array
+		},
+	}
+
+	_, err := c.rpc.Do(call)
+	if err != nil {
+		return fmt.Errorf("import research sources: %w", err)
+	}
+
+	return nil
+}
+
+// parseResearchResultsFromData parses research results from RPC response data.
+// Actual response format (nested):
+// [[[task_id, [project_id, [query, mode], 1, [[[url, title, desc, type]...], summary], status_int], [ts], [ts]]]]
+// Where status_int: 1=pending, 2=complete
+func parseResearchResultsFromData(data []interface{}) *ResearchResults {
+	if len(data) == 0 {
+		return &ResearchResults{}
+	}
+
+	results := &ResearchResults{}
+
+	// Navigate nested structure: data[0][0] = [task_id, [project_info...], ...]
+	outer, ok := data[0].([]interface{})
+	if !ok || len(outer) == 0 {
+		return results
+	}
+
+	taskInfo, ok := outer[0].([]interface{})
+	if !ok || len(taskInfo) < 2 {
+		return results
+	}
+
+	// Extract task ID (first element)
+	if taskID, ok := taskInfo[0].(string); ok {
+		results.TaskID = taskID
+	}
+
+	// Extract project info array (second element)
+	projectInfo, ok := taskInfo[1].([]interface{})
+	if !ok || len(projectInfo) < 5 {
+		return results
+	}
+
+	// Status is at projectInfo[4] (after sources array)
+	if statusVal, ok := projectInfo[4].(float64); ok {
+		switch int(statusVal) {
+		case 1:
+			results.Status = "pending"
+		case 2:
+			results.Status = "complete"
+		default:
+			results.Status = fmt.Sprintf("unknown_%d", int(statusVal))
+		}
+	}
+
+	// Sources are at projectInfo[3][0] - [[url, title, desc, type], ...]
+	if sourcesWrapper, ok := projectInfo[3].([]interface{}); ok && len(sourcesWrapper) > 0 {
+		if sourcesData, ok := sourcesWrapper[0].([]interface{}); ok {
+			for _, sourceData := range sourcesData {
+				if sourceArr, ok := sourceData.([]interface{}); ok && len(sourceArr) >= 4 {
+					source := ResearchSource{}
+
+					if url, ok := sourceArr[0].(string); ok {
+						source.URL = url
+						source.ID = url // URL serves as ID
+					}
+					if title, ok := sourceArr[1].(string); ok {
+						source.Title = title
+					}
+					if desc, ok := sourceArr[2].(string); ok {
+						source.Description = desc
+					}
+					if typeVal, ok := sourceArr[3].(float64); ok {
+						source.Type = int(typeVal)
+					}
+
+					results.Sources = append(results.Sources, source)
+				}
+			}
+		}
+
+		// Extract summary if present (second element of sources wrapper)
+		if len(sourcesWrapper) > 1 {
+			if summary, ok := sourcesWrapper[1].(string); ok {
+				results.Summary = summary
+			}
+		}
+	}
+
+	return results
+}

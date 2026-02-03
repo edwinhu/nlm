@@ -140,6 +140,11 @@ func init() {
 		fmt.Fprintf(os.Stderr, "  share-private <id>  Share notebook privately\n")
 		fmt.Fprintf(os.Stderr, "  share-details <share-id>  Get details of shared project\n\n")
 
+		fmt.Fprintf(os.Stderr, "Research Commands:\n")
+		fmt.Fprintf(os.Stderr, "  research <query>  Research a topic and add sources\n")
+		fmt.Fprintf(os.Stderr, "    --notebook <id>  Notebook ID (required)\n")
+		fmt.Fprintf(os.Stderr, "    --deep           Deep research mode (optional)\n\n")
+
 		fmt.Fprintf(os.Stderr, "Other Commands:\n")
 		fmt.Fprintf(os.Stderr, "  auth [profile]    Setup authentication\n")
 		fmt.Fprintf(os.Stderr, "  refresh           Refresh authentication credentials\n")
@@ -421,6 +426,7 @@ func isValidCommand(cmd string) bool {
 		"create-artifact", "get-artifact", "list-artifacts", "artifacts", "rename-artifact", "delete-artifact",
 		"generate-guide", "generate-outline", "generate-section", "generate-magic", "generate-mindmap", "generate-chat", "chat", "chat-list",
 		"rephrase", "expand", "summarize", "critique", "brainstorm", "verify", "explain", "outline", "study-guide", "faq", "briefing-doc", "mindmap", "timeline", "toc",
+		"research",
 		"auth", "refresh", "hb", "share", "share-private", "share-details", "feedback",
 	}
 
@@ -795,6 +801,27 @@ func runCmd(client *api.Client, cmd string, args ...string) error {
 		err = interactiveChat(client, args[0])
 	case "chat-list":
 		err = listChatSessions()
+
+	// Research operations
+	case "research":
+		// Parse research-specific flags
+		researchFlags := flag.NewFlagSet("research", flag.ExitOnError)
+		notebookID := researchFlags.String("notebook", "", "Notebook ID (required)")
+		deep := researchFlags.Bool("deep", false, "Deep research mode (optional)")
+		researchFlags.Parse(args)
+
+		if *notebookID == "" {
+			fmt.Fprintf(os.Stderr, "usage: nlm research --notebook <id> [--deep] <query>\n")
+			return fmt.Errorf("--notebook flag is required")
+		}
+
+		query := strings.Join(researchFlags.Args(), " ")
+		if query == "" {
+			fmt.Fprintf(os.Stderr, "usage: nlm research --notebook <id> [--deep] <query>\n")
+			return fmt.Errorf("query is required")
+		}
+
+		err = research(client, *notebookID, query, *deep)
 
 	// Sharing operations
 	case "share":
@@ -2234,6 +2261,77 @@ func listVideoOverviews(c *api.Client, notebookID string) error {
 		)
 	}
 	return w.Flush()
+}
+
+// Research operations
+func research(c *api.Client, notebookID, query string, deep bool) error {
+	mode := "fast"
+	if deep {
+		mode = "deep"
+	}
+	fmt.Fprintf(os.Stderr, "Researching \"%s\" (%s mode)...\n", query, mode)
+
+	// Start research
+	taskID, err := c.StartResearch(notebookID, query, deep)
+	if err != nil {
+		return fmt.Errorf("start research: %w", err)
+	}
+
+	fmt.Fprintf(os.Stderr, "Task ID: %s\n", taskID)
+
+	// Poll until our task completes
+	start := time.Now()
+	for {
+		results, err := c.PollResearchResults(notebookID)
+		if err != nil {
+			return fmt.Errorf("poll research: %w", err)
+		}
+
+		// Only consider complete if task ID matches our research
+		if results.TaskID == taskID && results.Status == "complete" {
+			// Display results
+			fmt.Printf("\n✅ Research complete!\n")
+			if results.Summary != "" {
+				fmt.Printf("\n📋 Summary: %s\n", results.Summary)
+			}
+
+			if len(results.Sources) > 0 {
+				fmt.Printf("\n📚 Found %d sources:\n", len(results.Sources))
+				for i, s := range results.Sources {
+					fmt.Printf("\n%d. %s\n", i+1, s.Title)
+					if s.Description != "" {
+						fmt.Printf("   %s\n", s.Description)
+					}
+					fmt.Printf("   🔗 %s\n", s.URL)
+				}
+
+				// Import sources (pass full source objects with URL and Title)
+				fmt.Fprintf(os.Stderr, "\nImporting sources to notebook...\n")
+				err = c.ImportResearchSources(notebookID, taskID, results.Sources)
+				if err != nil {
+					// Non-fatal: sources may already exist or import is unsupported
+					fmt.Fprintf(os.Stderr, "Note: Could not auto-import sources: %v\n", err)
+					fmt.Fprintf(os.Stderr, "You can manually add sources using 'nlm add %s <url>'\n", notebookID)
+				} else {
+					fmt.Printf("\n✅ Sources imported to notebook.\n")
+				}
+			}
+
+			return nil
+		}
+
+		elapsed := time.Since(start).Seconds()
+		if results.TaskID != taskID && results.TaskID != "" {
+			if debug {
+				fmt.Fprintf(os.Stderr, "Waiting for task %s (got %s)... %.0fs elapsed\n", taskID, results.TaskID, elapsed)
+			} else {
+				fmt.Fprintf(os.Stderr, "Researching... %.0fs elapsed\n", elapsed)
+			}
+		} else {
+			fmt.Fprintf(os.Stderr, "Researching... %.0fs elapsed (status: %s)\n", elapsed, results.Status)
+		}
+		time.Sleep(5 * time.Second)
+	}
 }
 
 func downloadAudioOverview(c *api.Client, notebookID string, filename string) error {
