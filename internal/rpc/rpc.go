@@ -144,10 +144,10 @@ func New(authToken, cookies string, options ...batchexecute.Option) *Client {
 // Do executes a NotebookLM RPC call
 func (c *Client) Do(call Call) (json.RawMessage, error) {
 	if c.Config.Debug {
-		fmt.Printf("\n=== RPC Call ===\n")
-		fmt.Printf("ID: %s\n", call.ID)
-		fmt.Printf("NotebookID: %s\n", call.NotebookID)
-		fmt.Printf("Args:\n")
+		fmt.Fprintf(os.Stderr,"\n=== RPC Call ===\n")
+		fmt.Fprintf(os.Stderr,"ID: %s\n", call.ID)
+		fmt.Fprintf(os.Stderr,"NotebookID: %s\n", call.NotebookID)
+		fmt.Fprintf(os.Stderr,"Args:\n")
 		spew.Dump(call.Args)
 	}
 
@@ -171,7 +171,7 @@ func (c *Client) Do(call Call) (json.RawMessage, error) {
 	}
 
 	if c.Config.Debug {
-		fmt.Printf("\nRPC Request:\n")
+		fmt.Fprintf(os.Stderr,"\nRPC Request:\n")
 		spew.Dump(rpc)
 	}
 
@@ -181,7 +181,7 @@ func (c *Client) Do(call Call) (json.RawMessage, error) {
 	}
 
 	if c.Config.Debug {
-		fmt.Printf("\nRPC Response:\n")
+		fmt.Fprintf(os.Stderr,"\nRPC Response:\n")
 		spew.Dump(resp)
 	}
 

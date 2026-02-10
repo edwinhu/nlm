@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -109,7 +110,7 @@ func (c *Client) GetProject(projectID string) (*Notebook, error) {
 	}
 
 	if c.config.Debug && project.Sources != nil {
-		fmt.Printf("DEBUG: Successfully parsed project with %d sources\n", len(project.Sources))
+		fmt.Fprintf(os.Stderr, "DEBUG:Successfully parsed project with %d sources\n", len(project.Sources))
 	}
 	return project, nil
 }
@@ -1873,7 +1874,7 @@ func (c *Client) GenerateFreeFormStreamed(projectID string, prompt string, sourc
 		if err != nil {
 			// If getting project fails, try without sources as fallback
 			if c.config.Debug {
-				fmt.Printf("DEBUG: Failed to get project sources, continuing without: %v\n", err)
+				fmt.Fprintf(os.Stderr, "DEBUG:Failed to get project sources, continuing without: %v\n", err)
 			}
 			// Continue without sources rather than failing completely
 		} else {
@@ -1885,7 +1886,7 @@ func (c *Client) GenerateFreeFormStreamed(projectID string, prompt string, sourc
 			}
 
 			if c.config.Debug {
-				fmt.Printf("DEBUG: Using %d sources for chat\n", len(sourceIDs))
+				fmt.Fprintf(os.Stderr, "DEBUG:Using %d sources for chat\n", len(sourceIDs))
 			}
 		}
 	}
@@ -1893,7 +1894,7 @@ func (c *Client) GenerateFreeFormStreamed(projectID string, prompt string, sourc
 	// Try using the gRPC endpoint for chat (works better with sources)
 	if len(sourceIDs) > 0 {
 		if c.config.Debug {
-			fmt.Printf("DEBUG: Trying gRPC endpoint for chat with %d sources\n", len(sourceIDs))
+			fmt.Fprintf(os.Stderr, "DEBUG:Trying gRPC endpoint for chat with %d sources\n", len(sourceIDs))
 		}
 
 		grpcReq := grpcendpoint.Request{
@@ -1904,13 +1905,13 @@ func (c *Client) GenerateFreeFormStreamed(projectID string, prompt string, sourc
 		respBytes, err := c.grpcClient.Execute(grpcReq)
 		if err != nil {
 			if c.config.Debug {
-				fmt.Printf("DEBUG: gRPC endpoint failed: %v, trying batchexecute fallback\n", err)
+				fmt.Fprintf(os.Stderr, "DEBUG:gRPC endpoint failed: %v, trying batchexecute fallback\n", err)
 			}
 			// Fall through to batchexecute
 		} else {
 			// Parse the gRPC response
 			if c.config.Debug {
-				fmt.Printf("DEBUG: gRPC response: %s\n", string(respBytes))
+				fmt.Fprintf(os.Stderr, "DEBUG:gRPC response: %s\n", string(respBytes))
 			}
 			// For now, extract text from response and return
 			response := &pb.GenerateFreeFormStreamedResponse{
@@ -1954,7 +1955,7 @@ func (c *Client) GenerateFreeFormStreamedWithCallback(projectID string, prompt s
 		if err != nil {
 			// If getting project fails, try without sources as fallback
 			if c.config.Debug {
-				fmt.Printf("DEBUG: Failed to get project sources, continuing without: %v\n", err)
+				fmt.Fprintf(os.Stderr, "DEBUG:Failed to get project sources, continuing without: %v\n", err)
 			}
 			// Continue without sources rather than failing completely
 		} else {
@@ -1966,7 +1967,7 @@ func (c *Client) GenerateFreeFormStreamedWithCallback(projectID string, prompt s
 			}
 
 			if c.config.Debug {
-				fmt.Printf("DEBUG: Using %d sources for chat\n", len(sourceIDs))
+				fmt.Fprintf(os.Stderr, "DEBUG:Using %d sources for chat\n", len(sourceIDs))
 			}
 		}
 	}
@@ -2024,7 +2025,7 @@ func (c *Client) GetProjectWithContext(ctx context.Context, projectID string) (*
 	}
 
 	if c.config.Debug && project.Sources != nil {
-		fmt.Printf("DEBUG: Successfully parsed project with %d sources\n", len(project.Sources))
+		fmt.Fprintf(os.Stderr, "DEBUG:Successfully parsed project with %d sources\n", len(project.Sources))
 	}
 	return project, nil
 }
@@ -2130,7 +2131,7 @@ type ResearchSource struct {
 	Title       string
 	URL         string
 	Description string
-	Type        int // 1=web, 2=doc, 3=slides, 5=report, 8=sheets
+	Type        int // 1=web, 2=doc, 3=slides, 5=report, 6=PDF, 7=DOCX, 8=sheets
 }
 
 // ResearchResults represents the results of a research operation
@@ -2145,7 +2146,7 @@ type ResearchResults struct {
 // If deep=true, uses deep research (more thorough, more sources).
 // If deep=false, uses fast research (quicker, fewer sources).
 // Returns the task ID for polling results.
-func (c *Client) StartResearch(projectID, query string, deep bool) (string, error) {
+func (c *Client) StartResearch(projectID, query string, deep bool, sourceType int) (string, error) {
 	var call rpc.Call
 
 	if deep {
@@ -2155,8 +2156,8 @@ func (c *Client) StartResearch(projectID, query string, deep bool) (string, erro
 			NotebookID: projectID,
 			Args: []interface{}{
 				nil,                     // Reserved
-				[]interface{}{1},        // Source types [1] = Web
-				[]interface{}{query, 1}, // Query tuple
+				[]interface{}{sourceType},        // Source types
+				[]interface{}{query, sourceType}, // Query tuple
 				5,                       // Research depth parameter
 				projectID,               // Project ID
 			},
@@ -2167,9 +2168,9 @@ func (c *Client) StartResearch(projectID, query string, deep bool) (string, erro
 			ID:         rpc.RPCStartFastResearch,
 			NotebookID: projectID,
 			Args: []interface{}{
-				[]interface{}{query, 1}, // Query tuple with source type 1 (Web)
-				nil,                     // Reserved
-				1,                       // Source type flag
+				[]interface{}{query, sourceType}, // Query tuple with source type
+				nil,                             // Reserved
+				sourceType,                      // Source type flag
 				projectID,               // Project ID
 			},
 		}
@@ -2182,11 +2183,27 @@ func (c *Client) StartResearch(projectID, query string, deep bool) (string, erro
 
 	// Parse response to extract task ID
 	// Response format: ["task_id"]
+	// The batchexecute manual extractor may return malformed data with extra content.
+	// Try clean JSON first, then fall back to regex extraction of UUID task ID.
 	var data []interface{}
 	if err := json.Unmarshal(resp, &data); err != nil {
-		return "", fmt.Errorf("parse research response: %w", err)
+		// Response might be a JSON string that needs double parsing
+		var strData string
+		if err2 := json.Unmarshal(resp, &strData); err2 == nil {
+			if err3 := json.Unmarshal([]byte(strData), &data); err3 == nil {
+				goto extracted
+			}
+		}
+		// Fall back: extract UUID-like task ID from raw response text
+		respStr := strings.ReplaceAll(string(resp), `\"`, `"`)
+		// Look for UUID pattern (8-4-4-4-12 hex chars)
+		uuidPattern := regexp.MustCompile(`[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`)
+		if match := uuidPattern.FindString(respStr); match != "" {
+			return match, nil
+		}
+		return "", fmt.Errorf("parse research response: %w (raw: %s)", err, string(resp))
 	}
-
+extracted:
 	if len(data) > 0 {
 		if taskID, ok := data[0].(string); ok {
 			return taskID, nil
@@ -2224,23 +2241,107 @@ func (c *Client) PollResearchResults(projectID string) (*ResearchResults, error)
 }
 
 // ImportResearchSources imports sources from research results into the notebook.
-// Each source needs URL and Title for the import format.
-func (c *Client) ImportResearchSources(projectID, taskID string, sources []ResearchSource) error {
-	// Convert sources to the required format:
-	// [null, null, [url, title], null, null, null, null, null, null, null, 2]
+// For web sources (sourceType=1), uses the ImportResearchSources RPC.
+// For Drive sources (sourceType=2), uses the AddSources RPC which has proper
+// Google Drive API integration (ImportResearchSources fetches URLs as web pages,
+// which fails for Drive files that require authentication).
+func (c *Client) ImportResearchSources(projectID, taskID string, sources []ResearchSource, sourceType int) error {
+	if sourceType == 2 {
+		return c.importDriveSources(projectID, taskID, sources)
+	}
+	return c.importWebSources(projectID, taskID, sources, sourceType)
+}
+
+// importDriveSources imports Drive research results using the ImportResearchSources RPC
+// with the Drive-specific per-source format: [[fileID, mimeType, 1, title], null*9, 2].
+// This differs from web sources which use [null, null, [url, title], null*7, 2].
+// The web UI uses the same LBwxtb RPC for both; the per-source element format is the key.
+func (c *Client) importDriveSources(projectID, taskID string, sources []ResearchSource) error {
+	sourceArray := make([]interface{}, len(sources))
+	for i, s := range sources {
+		fileID := extractDriveFileID(s.URL)
+		if fileID == "" {
+			fileID = s.URL // Fallback to full URL
+		}
+		mimeType := driveSourceMIMEType(s.Type)
+		sourceArray[i] = []interface{}{
+			[]interface{}{fileID, mimeType, 1, s.Title}, // [0] Drive source info
+			nil, nil, nil, nil, nil, nil, nil, nil, nil, // [1]-[9]
+			2, // [10] source category
+		}
+	}
+
+	call := rpc.Call{
+		ID:         rpc.RPCImportResearchSources,
+		NotebookID: projectID,
+		Args: []interface{}{
+			nil,                // Reserved
+			[]interface{}{1},   // Source types
+			taskID,             // Task ID
+			projectID,          // Project ID
+			sourceArray,        // Sources array
+		},
+	}
+
+	_, err := c.rpc.Do(call)
+	if err != nil {
+		return fmt.Errorf("import drive sources: %w", err)
+	}
+	return nil
+}
+
+// driveSourceMIMEType maps research source type codes to MIME types.
+func driveSourceMIMEType(sourceType int) string {
+	switch sourceType {
+	case 2: // Google Docs
+		return "application/vnd.google-apps.document"
+	case 3: // Google Slides
+		return "application/vnd.google-apps.presentation"
+	case 6: // PDF
+		return "application/pdf"
+	case 7: // DOCX
+		return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+	case 8: // Google Sheets
+		return "application/vnd.google-apps.spreadsheet"
+	default:
+		return "application/pdf" // Safe default for Drive files
+	}
+}
+
+// extractDriveFileID extracts the file ID from various Google Drive URL formats.
+func extractDriveFileID(rawURL string) string {
+	// Format: https://drive.google.com/open?id=FILE_ID
+	if idx := strings.Index(rawURL, "open?id="); idx >= 0 {
+		return rawURL[idx+8:]
+	}
+	// Format: https://drive.google.com/file/d/FILE_ID/...
+	if idx := strings.Index(rawURL, "/file/d/"); idx >= 0 {
+		id := rawURL[idx+8:]
+		if slashIdx := strings.Index(id, "/"); slashIdx >= 0 {
+			return id[:slashIdx]
+		}
+		return id
+	}
+	// Format: https://docs.google.com/document/d/FILE_ID/...
+	if idx := strings.Index(rawURL, "/d/"); idx >= 0 {
+		id := rawURL[idx+3:]
+		if slashIdx := strings.Index(id, "/"); slashIdx >= 0 {
+			return id[:slashIdx]
+		}
+		return id
+	}
+	return ""
+}
+
+// importWebSources imports web research results using the ImportResearchSources RPC.
+func (c *Client) importWebSources(projectID, taskID string, sources []ResearchSource, sourceType int) error {
 	sourceArray := make([]interface{}, len(sources))
 	for i, s := range sources {
 		sourceArray[i] = []interface{}{
 			nil,
 			nil,
 			[]interface{}{s.URL, s.Title},
-			nil,
-			nil,
-			nil,
-			nil,
-			nil,
-			nil,
-			nil,
+			nil, nil, nil, nil, nil, nil, nil,
 			2,
 		}
 	}
@@ -2249,11 +2350,11 @@ func (c *Client) ImportResearchSources(projectID, taskID string, sources []Resea
 		ID:         rpc.RPCImportResearchSources,
 		NotebookID: projectID,
 		Args: []interface{}{
-			nil,              // Reserved
-			[]interface{}{1}, // Source types [1] = Web
-			taskID,           // Task ID
-			projectID,        // Project ID
-			sourceArray,      // Sources array
+			nil,                       // Reserved
+			[]interface{}{sourceType}, // Source types
+			taskID,                    // Task ID
+			projectID,                 // Project ID
+			sourceArray,               // Sources array
 		},
 	}
 
@@ -2261,7 +2362,6 @@ func (c *Client) ImportResearchSources(projectID, taskID string, sources []Resea
 	if err != nil {
 		return fmt.Errorf("import research sources: %w", err)
 	}
-
 	return nil
 }
 

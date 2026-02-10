@@ -35,6 +35,7 @@ var (
 	chunkedResponse   bool // Control rt=c parameter for chunked vs JSON array response
 	useDirectRPC      bool // Use direct RPC calls instead of orchestration service
 	skipSources       bool // Skip fetching sources for chat (useful when project is inaccessible)
+	jsonOutput        bool // Output in JSON format instead of human-readable tables
 )
 
 // ChatSession represents a persistent chat conversation
@@ -60,6 +61,7 @@ func init() {
 	flag.BoolVar(&chunkedResponse, "chunked", false, "use chunked response format (rt=c)")
 	flag.BoolVar(&useDirectRPC, "direct-rpc", false, "use direct RPC calls for audio/video (bypasses orchestration service)")
 	flag.BoolVar(&skipSources, "skip-sources", false, "skip fetching sources for chat (useful for testing)")
+	flag.BoolVar(&jsonOutput, "json", false, "output in JSON format")
 	flag.StringVar(&chromeProfile, "profile", os.Getenv("NLM_BROWSER_PROFILE"), "Chrome profile to use")
 	flag.StringVar(&authToken, "auth", os.Getenv("NLM_AUTH_TOKEN"), "auth token (or set NLM_AUTH_TOKEN)")
 	flag.StringVar(&cookies, "cookies", os.Getenv("NLM_COOKIES"), "cookies for authentication (or set NLM_COOKIES)")
@@ -143,7 +145,8 @@ func init() {
 		fmt.Fprintf(os.Stderr, "Research Commands:\n")
 		fmt.Fprintf(os.Stderr, "  research <query>  Research a topic and add sources\n")
 		fmt.Fprintf(os.Stderr, "    --notebook <id>  Notebook ID (required)\n")
-		fmt.Fprintf(os.Stderr, "    --deep           Deep research mode (optional)\n\n")
+		fmt.Fprintf(os.Stderr, "    --deep           Deep research mode (optional)\n")
+		fmt.Fprintf(os.Stderr, "    --source <type>  Source type: web (default) or drive\n\n")
 
 		fmt.Fprintf(os.Stderr, "Other Commands:\n")
 		fmt.Fprintf(os.Stderr, "  auth [profile]    Setup authentication\n")
@@ -382,7 +385,7 @@ func validateArgs(cmd string, args []string) error {
 			return fmt.Errorf("invalid arguments")
 		}
 	case "discover-sources":
-		if len(args) != 2 {
+		if len(args) < 2 {
 			fmt.Fprintf(os.Stderr, "usage: nlm discover-sources <notebook-id> <query>\n")
 			return fmt.Errorf("invalid arguments")
 		}
@@ -467,8 +470,8 @@ func run() error {
 	}
 
 	if debug {
-		fmt.Printf("DEBUG: Auth token loaded: %v\n", authToken != "")
-		fmt.Printf("DEBUG: Cookies loaded: %v\n", cookies != "")
+		fmt.Fprintf(os.Stderr, "DEBUG:Auth token loaded: %v\n", authToken != "")
+		fmt.Fprintf(os.Stderr, "DEBUG:Cookies loaded: %v\n", cookies != "")
 		if authToken != "" {
 			// Mask token for security - show only first 2 and last 2 chars for tokens > 8 chars
 			var tokenDisplay string
@@ -479,7 +482,7 @@ func run() error {
 				end := authToken[len(authToken)-2:]
 				tokenDisplay = start + strings.Repeat("*", len(authToken)-4) + end
 			}
-			fmt.Printf("DEBUG: Token: %s\n", tokenDisplay)
+			fmt.Fprintf(os.Stderr, "DEBUG:Token: %s\n", tokenDisplay)
 		}
 	}
 
@@ -808,20 +811,28 @@ func runCmd(client *api.Client, cmd string, args ...string) error {
 		researchFlags := flag.NewFlagSet("research", flag.ExitOnError)
 		notebookID := researchFlags.String("notebook", "", "Notebook ID (required)")
 		deep := researchFlags.Bool("deep", false, "Deep research mode (optional)")
+		source := researchFlags.String("source", "web", "Source type: web or drive")
 		researchFlags.Parse(args)
 
 		if *notebookID == "" {
-			fmt.Fprintf(os.Stderr, "usage: nlm research --notebook <id> [--deep] <query>\n")
+			fmt.Fprintf(os.Stderr, "usage: nlm research --notebook <id> [--deep] [--source web|drive] <query>\n")
 			return fmt.Errorf("--notebook flag is required")
 		}
 
 		query := strings.Join(researchFlags.Args(), " ")
 		if query == "" {
-			fmt.Fprintf(os.Stderr, "usage: nlm research --notebook <id> [--deep] <query>\n")
+			fmt.Fprintf(os.Stderr, "usage: nlm research --notebook <id> [--deep] [--source web|drive] <query>\n")
 			return fmt.Errorf("query is required")
 		}
 
-		err = research(client, *notebookID, query, *deep)
+		sourceType := 1 // web (default)
+		if *source == "drive" {
+			sourceType = 2
+		} else if *source != "web" {
+			return fmt.Errorf("invalid source type %q: must be 'web' or 'drive'", *source)
+		}
+
+		err = research(client, *notebookID, query, *deep, sourceType)
 
 	// Sharing operations
 	case "share":
@@ -849,6 +860,30 @@ func list(c *api.Client) error {
 	notebooks, err := c.ListRecentlyViewedProjects()
 	if err != nil {
 		return err
+	}
+
+	if jsonOutput {
+		type notebookJSON struct {
+			ID      string `json:"id"`
+			Title   string `json:"title"`
+			Emoji   string `json:"emoji,omitempty"`
+			Sources int    `json:"sources"`
+		}
+		var out []notebookJSON
+		for _, nb := range notebooks {
+			out = append(out, notebookJSON{
+				ID:      nb.ProjectId,
+				Title:   nb.Title,
+				Emoji:   strings.TrimSpace(nb.Emoji),
+				Sources: len(nb.Sources),
+			})
+		}
+		data, err := json.MarshalIndent(out, "", "  ")
+		if err != nil {
+			return err
+		}
+		fmt.Println(string(data))
+		return nil
 	}
 
 	// Display total count
@@ -910,6 +945,37 @@ func listSources(c *api.Client, notebookID string) error {
 	p, err := c.GetProject(notebookID)
 	if err != nil {
 		return fmt.Errorf("list sources: %w", err)
+	}
+
+	if jsonOutput {
+		type sourceJSON struct {
+			ID          string `json:"id"`
+			Title       string `json:"title"`
+			Type        string `json:"type"`
+			Status      string `json:"status"`
+			LastUpdated string `json:"last_updated,omitempty"`
+		}
+		var out []sourceJSON
+		for _, src := range p.Sources {
+			s := sourceJSON{
+				ID:    src.SourceId.GetSourceId(),
+				Title: strings.TrimSpace(src.Title),
+			}
+			if src.Metadata != nil {
+				s.Type = src.Metadata.GetSourceType().String()
+				s.Status = src.Metadata.Status.String()
+				if src.Metadata.LastModifiedTime != nil {
+					s.LastUpdated = src.Metadata.LastModifiedTime.AsTime().Format(time.RFC3339)
+				}
+			}
+			out = append(out, s)
+		}
+		data, err := json.MarshalIndent(out, "", "  ")
+		if err != nil {
+			return err
+		}
+		fmt.Println(string(data))
+		return nil
 	}
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', 0)
@@ -2264,15 +2330,19 @@ func listVideoOverviews(c *api.Client, notebookID string) error {
 }
 
 // Research operations
-func research(c *api.Client, notebookID, query string, deep bool) error {
+func research(c *api.Client, notebookID, query string, deep bool, sourceType int) error {
 	mode := "fast"
 	if deep {
 		mode = "deep"
 	}
-	fmt.Fprintf(os.Stderr, "Researching \"%s\" (%s mode)...\n", query, mode)
+	sourceStr := "web"
+	if sourceType == 2 {
+		sourceStr = "drive"
+	}
+	fmt.Fprintf(os.Stderr, "Researching \"%s\" (%s mode, %s sources)...\n", query, mode, sourceStr)
 
 	// Start research
-	taskID, err := c.StartResearch(notebookID, query, deep)
+	taskID, err := c.StartResearch(notebookID, query, deep, sourceType)
 	if err != nil {
 		return fmt.Errorf("start research: %w", err)
 	}
@@ -2307,7 +2377,7 @@ func research(c *api.Client, notebookID, query string, deep bool) error {
 
 				// Import sources (pass full source objects with URL and Title)
 				fmt.Fprintf(os.Stderr, "\nImporting sources to notebook...\n")
-				err = c.ImportResearchSources(notebookID, taskID, results.Sources)
+				err = c.ImportResearchSources(notebookID, taskID, results.Sources, sourceType)
 				if err != nil {
 					// Non-fatal: sources may already exist or import is unsupported
 					fmt.Fprintf(os.Stderr, "Note: Could not auto-import sources: %v\n", err)

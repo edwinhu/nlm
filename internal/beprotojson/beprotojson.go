@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"os"
 	"regexp"
 	"strings"
 
@@ -191,29 +192,29 @@ func (o UnmarshalOptions) populateMessage(arr []interface{}, m proto.Message) er
 	fields := msg.Descriptor().Fields()
 
 	if o.DebugParsing {
-		fmt.Printf("\n=== BEPROTOJSON PARSING ===\n")
-		fmt.Printf("Message Type: %s\n", msg.Descriptor().FullName())
-		fmt.Printf("Array Length: %d\n", len(arr))
-		fmt.Printf("Available Fields: %d\n", fields.Len())
+		fmt.Fprintf(os.Stderr,"\n=== BEPROTOJSON PARSING ===\n")
+		fmt.Fprintf(os.Stderr,"Message Type: %s\n", msg.Descriptor().FullName())
+		fmt.Fprintf(os.Stderr,"Array Length: %d\n", len(arr))
+		fmt.Fprintf(os.Stderr,"Available Fields: %d\n", fields.Len())
 	}
 
 	if o.DebugFieldMapping {
-		fmt.Printf("\n=== FIELD MAPPING ===\n")
+		fmt.Fprintf(os.Stderr,"\n=== FIELD MAPPING ===\n")
 		for i := 0; i < fields.Len(); i++ {
 			field := fields.Get(i)
-			fmt.Printf("Field #%d: %s (%s)\n", field.Number(), field.Name(), field.Kind())
+			fmt.Fprintf(os.Stderr,"Field #%d: %s (%s)\n", field.Number(), field.Name(), field.Kind())
 		}
-		fmt.Printf("\n=== ARRAY MAPPING ===\n")
+		fmt.Fprintf(os.Stderr,"\n=== ARRAY MAPPING ===\n")
 	}
 
 	for i, value := range arr {
 		if o.DebugFieldMapping {
-			fmt.Printf("Position %d: ", i)
+			fmt.Fprintf(os.Stderr,"Position %d: ", i)
 		}
 
 		if value == nil {
 			if o.DebugFieldMapping {
-				fmt.Printf("null (skipped)\n")
+				fmt.Fprintf(os.Stderr,"null (skipped)\n")
 			}
 			continue
 		}
@@ -221,7 +222,7 @@ func (o UnmarshalOptions) populateMessage(arr []interface{}, m proto.Message) er
 		field := fields.ByNumber(protoreflect.FieldNumber(i + 1))
 		if field == nil {
 			if o.DebugFieldMapping {
-				fmt.Printf("NO FIELD (position %d) -> value: %v\n", i+1, value)
+				fmt.Fprintf(os.Stderr,"NO FIELD (position %d) -> value: %v\n", i+1, value)
 			}
 			if !o.DiscardUnknown {
 				return fmt.Errorf("beprotojson: no field for position %d", i+1)
@@ -230,7 +231,7 @@ func (o UnmarshalOptions) populateMessage(arr []interface{}, m proto.Message) er
 		}
 
 		if o.DebugFieldMapping {
-			fmt.Printf("maps to field #%d %s (%s) -> value: %v\n",
+			fmt.Fprintf(os.Stderr,"maps to field #%d %s (%s) -> value: %v\n",
 				field.Number(), field.Name(), field.Kind(), value)
 		}
 
@@ -483,7 +484,7 @@ func cleanTrailingDigits(data string) string {
 
 func (o UnmarshalOptions) setMessageField(m protoreflect.Message, fd protoreflect.FieldDescriptor, val interface{}) error {
 	if o.DebugParsing {
-		fmt.Printf("  -> Parsing nested message: %s\n", fd.Message().FullName())
+		fmt.Fprintf(os.Stderr,"  -> Parsing nested message: %s\n", fd.Message().FullName())
 	}
 
 	msgType, err := protoregistry.GlobalTypes.FindMessageByName(fd.Message().FullName())
@@ -503,7 +504,7 @@ func (o UnmarshalOptions) setMessageField(m protoreflect.Message, fd protoreflec
 		}
 
 		if o.DebugFieldMapping {
-			fmt.Printf("    Nested message %s has %d array elements\n",
+			fmt.Fprintf(os.Stderr,"    Nested message %s has %d array elements\n",
 				fd.Message().FullName(), len(v))
 		}
 
@@ -512,7 +513,7 @@ func (o UnmarshalOptions) setMessageField(m protoreflect.Message, fd protoreflec
 		for i := 0; i < len(v); i++ {
 			if v[i] == nil {
 				if o.DebugFieldMapping {
-					fmt.Printf("    Position %d: null (skipped)\n", i)
+					fmt.Fprintf(os.Stderr,"    Position %d: null (skipped)\n", i)
 				}
 				continue
 			}
@@ -521,7 +522,7 @@ func (o UnmarshalOptions) setMessageField(m protoreflect.Message, fd protoreflec
 			field := fields.ByNumber(fieldNum)
 			if field == nil {
 				if o.DebugFieldMapping {
-					fmt.Printf("    Position %d: NO FIELD -> value: %v\n", i, v[i])
+					fmt.Fprintf(os.Stderr,"    Position %d: NO FIELD -> value: %v\n", i, v[i])
 				}
 				if !o.DiscardUnknown {
 					return fmt.Errorf("no field for position %d", i+1)
@@ -530,7 +531,7 @@ func (o UnmarshalOptions) setMessageField(m protoreflect.Message, fd protoreflec
 			}
 
 			if o.DebugFieldMapping {
-				fmt.Printf("    Position %d: maps to field #%d %s (%s) -> value: %v\n",
+				fmt.Fprintf(os.Stderr,"    Position %d: maps to field #%d %s (%s) -> value: %v\n",
 					i, field.Number(), field.Name(), field.Kind(), v[i])
 			}
 

@@ -81,14 +81,14 @@ func TestStartResearchMethodExists(t *testing.T) {
 	client := New("test-token", "test-cookies")
 
 	// Call StartResearch with deep=false (fast research)
-	_, err := client.StartResearch("project-123", "test query", false)
+	_, err := client.StartResearch("project-123", "test query", false, 1)
 	// We expect an error since we're not hitting a real server, but the method should exist
 	if err == nil {
 		t.Log("StartResearch executed without error")
 	}
 
 	// Call StartResearch with deep=true (deep research)
-	_, err = client.StartResearch("project-123", "test query", true)
+	_, err = client.StartResearch("project-123", "test query", true, 1)
 	if err == nil {
 		t.Log("StartResearch (deep) executed without error")
 	}
@@ -113,8 +113,11 @@ func TestImportResearchSourcesMethodExists(t *testing.T) {
 	client := New("test-token", "test-cookies")
 
 	// Call ImportResearchSources
-	sources := []string{"https://example.com/1", "https://example.com/2"}
-	err := client.ImportResearchSources("project-123", "task-456", sources)
+	sources := []ResearchSource{
+		{URL: "https://example.com/1", Title: "Source 1", Type: 1},
+		{URL: "https://example.com/2", Title: "Source 2", Type: 2},
+	}
+	err := client.ImportResearchSources("project-123", "task-456", sources, 1)
 	// We expect an error since we're not hitting a real server, but the method should exist
 	if err == nil {
 		t.Log("ImportResearchSources executed without error")
@@ -123,9 +126,19 @@ func TestImportResearchSourcesMethodExists(t *testing.T) {
 
 // TestParseResearchResults tests parsing of research results from RPC response
 func TestParseResearchResults(t *testing.T) {
-	// Sample response format from poll research results
-	// Format: [task_id, status, [[source_id, title, url, type], ...]]
-	responseJSON := `["task-123", "complete", [["src-1", "Source One", "https://example.com/1", 1], ["src-2", "Source Two", "https://example.com/2", 2]]]`
+	// Actual nested response format from PollResearchResults:
+	// [[[task_id, [project_id, [query, mode], 1, [[[url, title, desc, type]...], summary], status], [ts], [ts]]]]
+	responseJSON := `[[[
+		"task-123",
+		["proj-1", ["test query", 1], 1,
+			[[["https://example.com/1", "Source One", "Description one", 1],
+			  ["https://example.com/2", "Source Two", "Description two", 2]],
+			 "Research summary"],
+			2
+		],
+		[1234567890],
+		[1234567891]
+	]]]`
 
 	var data []interface{}
 	err := json.Unmarshal([]byte(responseJSON), &data)
@@ -133,7 +146,6 @@ func TestParseResearchResults(t *testing.T) {
 		t.Fatalf("failed to unmarshal test data: %v", err)
 	}
 
-	// Test the parsing logic that will be in the client
 	results := parseResearchResultsFromData(data)
 	if results == nil {
 		t.Fatal("parseResearchResultsFromData returned nil")
@@ -148,10 +160,18 @@ func TestParseResearchResults(t *testing.T) {
 	}
 
 	if len(results.Sources) != 2 {
-		t.Errorf("expected 2 sources, got %d", len(results.Sources))
+		t.Fatalf("expected 2 sources, got %d", len(results.Sources))
 	}
 
-	if results.Sources[0].ID != "src-1" {
-		t.Errorf("expected first source ID 'src-1', got %s", results.Sources[0].ID)
+	if results.Sources[0].URL != "https://example.com/1" {
+		t.Errorf("expected first source URL 'https://example.com/1', got %s", results.Sources[0].URL)
+	}
+
+	if results.Sources[0].Title != "Source One" {
+		t.Errorf("expected first source title 'Source One', got %s", results.Sources[0].Title)
+	}
+
+	if results.Summary != "Research summary" {
+		t.Errorf("expected summary 'Research summary', got %s", results.Summary)
 	}
 }

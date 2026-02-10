@@ -11,36 +11,36 @@ package method
 // EncodeStartFastResearchArgs encodes arguments for StartFastResearch RPC.
 // RPC ID: Ljjv0c
 //
-// Argument format: [["query", 1], null, 1, "project_id"]
-// - [0]: Query tuple [query_string, source_type] where source_type 1 = Web
+// Argument format: [["query", sourceType], null, sourceType, "project_id"]
+// - [0]: Query tuple [query_string, source_type] where 1 = Web, 2 = Drive
 // - [1]: null (reserved)
-// - [2]: 1 (source type flag)
+// - [2]: source type flag (1 = Web, 2 = Drive)
 // - [3]: Project ID
-func EncodeStartFastResearchArgs(projectID, query string) []interface{} {
+func EncodeStartFastResearchArgs(projectID, query string, sourceType int) []interface{} {
 	return []interface{}{
-		[]interface{}{query, 1}, // Query tuple with source type 1 (Web)
-		nil,                     // Reserved
-		1,                       // Source type flag
-		projectID,               // Project ID
+		[]interface{}{query, sourceType}, // Query tuple with source type
+		nil,                              // Reserved
+		sourceType,                       // Source type flag
+		projectID,                        // Project ID
 	}
 }
 
 // EncodeStartDeepResearchArgs encodes arguments for StartDeepResearch RPC.
 // RPC ID: QA9ei
 //
-// Argument format: [null, [1], ["query", 1], 5, "project_id"]
+// Argument format: [null, [sourceType], ["query", sourceType], 5, "project_id"]
 // - [0]: null (reserved)
-// - [1]: [1] - Source types array (1 = Web)
+// - [1]: [sourceType] - Source types array (1 = Web, 2 = Drive)
 // - [2]: Query tuple [query_string, source_type]
 // - [3]: 5 - Research depth/thoroughness parameter
 // - [4]: Project ID
-func EncodeStartDeepResearchArgs(projectID, query string) []interface{} {
+func EncodeStartDeepResearchArgs(projectID, query string, sourceType int) []interface{} {
 	return []interface{}{
-		nil,                     // Reserved
-		[]interface{}{1},        // Source types [1] = Web
-		[]interface{}{query, 1}, // Query tuple
-		5,                       // Research depth parameter
-		projectID,               // Project ID
+		nil,                              // Reserved
+		[]interface{}{sourceType},        // Source types array
+		[]interface{}{query, sourceType}, // Query tuple
+		5,                                // Research depth parameter
+		projectID,                        // Project ID
 	}
 }
 
@@ -62,13 +62,13 @@ func EncodePollResearchResultsArgs(projectID string) []interface{} {
 // EncodeImportResearchSourcesArgs encodes arguments for ImportResearchSources RPC.
 // RPC ID: LBwxtb
 //
-// Argument format: [null, [1], "task_id", "project_id", [sources]]
+// Argument format: [null, [sourceType], "task_id", "project_id", [sources]]
 // - [0]: null (reserved)
-// - [1]: [1] - Source types array (1 = Web)
+// - [1]: [sourceType] - Source types array (1 = Web, 2 = Drive)
 // - [2]: Task ID from research operation
 // - [3]: Project ID
 // - [4]: Array of source URLs to import
-func EncodeImportResearchSourcesArgs(projectID, taskID string, sources []string) []interface{} {
+func EncodeImportResearchSourcesArgs(projectID, taskID string, sources []string, sourceType int) []interface{} {
 	// Convert []string to []interface{} for JSON marshaling
 	sourceArray := make([]interface{}, len(sources))
 	for i, s := range sources {
@@ -76,10 +76,10 @@ func EncodeImportResearchSourcesArgs(projectID, taskID string, sources []string)
 	}
 
 	return []interface{}{
-		nil,              // Reserved
-		[]interface{}{1}, // Source types [1] = Web
-		taskID,           // Task ID
-		projectID,        // Project ID
-		sourceArray,      // Sources array
+		nil,                       // Reserved
+		[]interface{}{sourceType}, // Source types array
+		taskID,                    // Task ID
+		projectID,                 // Project ID
+		sourceArray,               // Sources array
 	}
 }

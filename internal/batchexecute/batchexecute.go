@@ -132,8 +132,8 @@ func (c *Client) Execute(rpcs []RPC) (*Response, error) {
 	u.RawQuery = q.Encode()
 
 	if c.config.Debug {
-		fmt.Printf("\n=== BatchExecute Request ===\n")
-		fmt.Printf("URL: %s\n", u.String())
+		fmt.Fprintf(os.Stderr,"\n=== BatchExecute Request ===\n")
+		fmt.Fprintf(os.Stderr,"URL: %s\n", u.String())
 	}
 
 	// Build request body
@@ -169,7 +169,7 @@ func (c *Client) Execute(rpcs []RPC) (*Response, error) {
 			end := token[len(token)-3:]
 			tokenDisplay = start + strings.Repeat("*", len(token)-6) + end
 		}
-		fmt.Printf("\nAuth Token: %s\n", tokenDisplay)
+		fmt.Fprintf(os.Stderr,"\nAuth Token: %s\n", tokenDisplay)
 
 		// Mask auth token in request body display
 		maskedForm := url.Values{}
@@ -182,8 +182,8 @@ func (c *Client) Execute(rpcs []RPC) (*Response, error) {
 				maskedForm[k] = v
 			}
 		}
-		fmt.Printf("\nRequest Body:\n%s\n", maskedForm.Encode())
-		fmt.Printf("\nDecoded Request Body:\n%s\n", string(reqBody))
+		fmt.Fprintf(os.Stderr,"\nRequest Body:\n%s\n", maskedForm.Encode())
+		fmt.Fprintf(os.Stderr,"\nDecoded Request Body:\n%s\n", string(reqBody))
 	}
 
 	// Create request
@@ -200,14 +200,14 @@ func (c *Client) Execute(rpcs []RPC) (*Response, error) {
 	req.Header.Set("cookie", c.config.Cookies)
 
 	if c.config.Debug {
-		fmt.Printf("\nRequest Headers:\n")
+		fmt.Fprintf(os.Stderr,"\nRequest Headers:\n")
 		for k, v := range req.Header {
 			if strings.ToLower(k) == "cookie" && len(v) > 0 {
 				// Mask cookie values for security
 				maskedCookies := maskCookieValues(v[0])
-				fmt.Printf("%s: [%s]\n", k, maskedCookies)
+				fmt.Fprintf(os.Stderr,"%s: [%s]\n", k, maskedCookies)
 			} else {
-				fmt.Printf("%s: %v\n", k, v)
+				fmt.Fprintf(os.Stderr,"%s: %v\n", k, v)
 			}
 		}
 	}
@@ -226,7 +226,7 @@ func (c *Client) Execute(rpcs []RPC) (*Response, error) {
 			}
 
 			if c.config.Debug {
-				fmt.Printf("\nRetrying request (attempt %d/%d) after %v...\n", attempt, c.config.MaxRetries, delay)
+				fmt.Fprintf(os.Stderr,"\nRetrying request (attempt %d/%d) after %v...\n", attempt, c.config.MaxRetries, delay)
 			}
 			time.Sleep(delay)
 		}
@@ -280,9 +280,9 @@ func (c *Client) Execute(rpcs []RPC) (*Response, error) {
 	}
 
 	if c.config.Debug {
-		fmt.Printf("\nResponse Status: %s\n", resp.Status)
-		fmt.Printf("Raw Response Body:\n%q\n", string(body))
-		fmt.Printf("Response Body:\n%s\n", string(body))
+		fmt.Fprintf(os.Stderr,"\nResponse Status: %s\n", resp.Status)
+		fmt.Fprintf(os.Stderr,"Raw Response Body:\n%q\n", string(body))
+		fmt.Fprintf(os.Stderr,"Response Body:\n%s\n", string(body))
 	}
 
 	if resp.StatusCode != http.StatusOK {
@@ -297,8 +297,8 @@ func (c *Client) Execute(rpcs []RPC) (*Response, error) {
 	responses, err := decodeResponse(string(body))
 	if err != nil {
 		if c.config.Debug {
-			fmt.Printf("Failed to decode response: %v\n", err)
-			fmt.Printf("Raw response: %s\n", string(body))
+			fmt.Fprintf(os.Stderr,"Failed to decode response: %v\n", err)
+			fmt.Fprintf(os.Stderr,"Raw response: %s\n", string(body))
 		}
 
 		// Special handling for certain responses
@@ -317,7 +317,7 @@ func (c *Client) Execute(rpcs []RPC) (*Response, error) {
 
 	if len(responses) == 0 {
 		if c.config.Debug {
-			fmt.Printf("No valid responses found in: %s\n", string(body))
+			fmt.Fprintf(os.Stderr,"No valid responses found in: %s\n", string(body))
 		}
 		return nil, fmt.Errorf("no valid responses found")
 	}
@@ -326,14 +326,14 @@ func (c *Client) Execute(rpcs []RPC) (*Response, error) {
 	firstResponse := &responses[0]
 	if apiError, isError := IsErrorResponse(firstResponse); isError {
 		if c.config.Debug {
-			fmt.Printf("Detected API error: %s\n", apiError.Error())
+			fmt.Fprintf(os.Stderr,"Detected API error: %s\n", apiError.Error())
 		}
 		return nil, apiError
 	}
 
 	// Debug dump payload if requested
 	if c.config.DebugDumpPayload {
-		fmt.Print(string(firstResponse.Data))
+		fmt.Fprint(os.Stderr, string(firstResponse.Data))
 		return nil, fmt.Errorf("payload dumped")
 	}
 

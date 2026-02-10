@@ -57,3 +57,27 @@ func getChromePath() string {
 	}
 	return ""
 }
+
+func getBrowserPathForProfile(browserName string) string {
+	switch browserName {
+	case "Brave":
+		if path, err := exec.LookPath("brave-browser"); err == nil {
+			return path
+		}
+	case "Chrome Canary":
+		// No Canary on Linux
+	default:
+		return getChromePath()
+	}
+	return ""
+}
+
+func getCanaryProfilePath() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".config", "google-chrome-canary")
+}
+
+func getBraveProfilePath() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".config", "BraveSoftware", "Brave-Browser")
+}
