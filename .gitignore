@@ -22,3 +22,5 @@ Web Data
 *.db
 *.db-*
 .worktrees/
+.claude/
+.mcp.json
