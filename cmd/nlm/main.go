@@ -828,6 +828,9 @@ func runCmd(client *api.Client, cmd string, args ...string) error {
 		sourceType := 1 // web (default)
 		if *source == "drive" {
 			sourceType = 2
+			if *deep {
+				return fmt.Errorf("--deep mode is not supported for Drive sources")
+			}
 		} else if *source != "web" {
 			return fmt.Errorf("invalid source type %q: must be 'web' or 'drive'", *source)
 		}
@@ -2349,6 +2352,19 @@ func research(c *api.Client, notebookID, query string, deep bool, sourceType int
 
 	fmt.Fprintf(os.Stderr, "Task ID: %s\n", taskID)
 
+	// Deep web research: kick off and return immediately.
+	// Deep research returns many sources with high noise; let the user
+	// review and cherry-pick in the NotebookLM web UI.
+	if deep && sourceType != 2 {
+		fmt.Printf("\nDeep research started. Review and import sources at:\n")
+		fmt.Printf("  https://notebooklm.google.com/notebook/%s\n", notebookID)
+		return nil
+	}
+
+	// Drive sources and fast web research: poll and auto-import.
+	// Drive sources are high signal, so auto-importing is safe.
+	autoImport := sourceType == 2 // auto-import Drive sources
+
 	// Poll until our task completes
 	start := time.Now()
 	for {
@@ -2375,15 +2391,20 @@ func research(c *api.Client, notebookID, query string, deep bool, sourceType int
 					fmt.Printf("   🔗 %s\n", s.URL)
 				}
 
-				// Import sources (pass full source objects with URL and Title)
-				fmt.Fprintf(os.Stderr, "\nImporting sources to notebook...\n")
-				err = c.ImportResearchSources(notebookID, taskID, results.Sources, sourceType)
-				if err != nil {
-					// Non-fatal: sources may already exist or import is unsupported
-					fmt.Fprintf(os.Stderr, "Note: Could not auto-import sources: %v\n", err)
-					fmt.Fprintf(os.Stderr, "You can manually add sources using 'nlm add %s <url>'\n", notebookID)
+				if autoImport {
+					// Import sources (pass full source objects with URL and Title)
+					fmt.Fprintf(os.Stderr, "\nImporting sources to notebook...\n")
+					err = c.ImportResearchSources(notebookID, taskID, results.Sources, sourceType)
+					if err != nil {
+						// Non-fatal: sources may already exist or import is unsupported
+						fmt.Fprintf(os.Stderr, "Note: Could not auto-import sources: %v\n", err)
+						fmt.Fprintf(os.Stderr, "You can manually add sources using 'nlm add %s <url>'\n", notebookID)
+					} else {
+						fmt.Printf("\n✅ Sources imported to notebook.\n")
+					}
 				} else {
-					fmt.Printf("\n✅ Sources imported to notebook.\n")
+					fmt.Printf("\nReview sources and import manually at:\n")
+					fmt.Printf("  https://notebooklm.google.com/notebook/%s\n", notebookID)
 				}
 			}
 

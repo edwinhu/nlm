@@ -69,6 +69,7 @@ Research Commands:
   research <query>  Research a topic and import sources
     --notebook <id>  Notebook ID (required)
     --deep           Deep research mode (optional)
+    --source <type>  Source type: web (default) or drive
 
 Other Commands:
   auth              Setup authentication
@@ -251,45 +252,28 @@ nlm add <notebook-id> https://www.youtube.com/watch?v=dQw4w9WgXcQ
 
 ### Research
 
-Discover and import sources on any topic directly from the web:
+Discover and import sources on any topic from the web or Google Drive:
 
 ```bash
-# Research a topic and auto-import sources to notebook
+# Research a topic (fast web search, displays results)
 nlm research --notebook <notebook-id> "artificial intelligence trends 2024"
 
-# Use deep research mode for more thorough results
+# Deep research (kicks off in background, review in web UI)
 nlm research --notebook <notebook-id> --deep "climate change policy"
+
+# Search Google Drive (auto-imports found documents)
+nlm research --notebook <notebook-id> --source drive "quarterly earnings reports"
 ```
 
-The research command will:
-1. Search the web for relevant sources on your topic
-2. Display found sources with titles, descriptions, and URLs
-3. Automatically import all sources into your notebook
+Import behavior varies by mode:
 
-Example output:
-```
-Researching "renewable energy trends 2024" (fast mode)...
-Task ID: 4fbd7414-34d1-49b7-bff0-db9533ef5fd6
+| Mode | Polls | Auto-imports |
+|------|-------|-------------|
+| Fast web (default) | Yes | No — displays results, link to review |
+| Deep web (`--deep`) | No — returns immediately | No — review in web UI |
+| Drive (`--source drive`) | Yes | Yes — high signal sources |
 
-✅ Research complete!
-
-📋 Summary: These selections illustrate the global surge in renewable capacity...
-
-📚 Found 10 sources:
-
-1. Executive summary – Renewables 2024 – Analysis - IEA
-   This report explains 2024's record-breaking capacity and the tripling goal gap.
-   🔗 https://www.iea.org/reports/renewables-2024/executive-summary
-
-2. Six highlights of the global energy transition in 2024 - Ember
-   Insights into the emergent 'Age of Electricity' and solar-battery synergy.
-   🔗 https://ember-energy.org/latest-insights/...
-
-...
-
-Importing sources to notebook...
-✅ Sources imported to notebook.
-```
+Drive research finds Google Docs, Sheets, Slides, PDFs, and Word documents in your Google Drive. Note: `--deep` mode is only supported for web sources.
 
 ### Note Operations
 
