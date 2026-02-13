@@ -455,6 +455,16 @@ func (c *Client) AddSourceFromURL(projectID string, url string) (string, error) 
 		return c.AddYouTubeSource(projectID, videoID)
 	}
 
+	// Check if it's a Google Drive file URL (not native Google Workspace docs).
+	// Drive files like uploaded PDFs need a different RPC payload format.
+	if isDriveFileURL(url) {
+		fileID := extractDriveFileID(url)
+		if fileID == "" {
+			return "", fmt.Errorf("could not extract file ID from Drive URL: %s", url)
+		}
+		return c.AddSourceFromDrive(projectID, fileID)
+	}
+
 	// Regular URL handling
 	resp, err := c.rpc.Do(rpc.Call{
 		ID:         rpc.RPCAddSources,
@@ -472,6 +482,50 @@ func (c *Client) AddSourceFromURL(projectID string, url string) (string, error) 
 	})
 	if err != nil {
 		return "", fmt.Errorf("add source from URL: %w", err)
+	}
+
+	sourceID, err := extractSourceID(resp)
+	if err != nil {
+		return "", fmt.Errorf("extract source ID: %w", err)
+	}
+	return sourceID, nil
+}
+
+// AddSourceFromDrive adds a Google Drive file (PDF, DOCX, etc.) as a source using the
+// Drive-specific per-source format for the izAoDd (AddSources) RPC.
+// This is needed because non-native Drive files (e.g., uploaded PDFs) fail when sent
+// using the regular web URL format [nil, nil, [url]].
+func (c *Client) AddSourceFromDrive(projectID, fileID string) (string, error) {
+	if c.rpc.Config.Debug {
+		fmt.Printf("=== AddSourceFromDrive ===\n")
+		fmt.Printf("Project ID: %s\n", projectID)
+		fmt.Printf("File ID: %s\n", fileID)
+	}
+
+	// Drive files added via izAoDd use the same per-source element format as
+	// importDriveSources (LBwxtb): [[fileID, mimeType, 1, title], nil*9, 2].
+	// Default to application/pdf since that's the most common Drive file type
+	// added to NotebookLM. The title uses the file ID as a placeholder; the
+	// server will resolve the actual filename from Drive metadata.
+	mimeType := "application/pdf"
+	title := fileID
+
+	perSource := []interface{}{
+		[]interface{}{fileID, mimeType, 1, title}, // [0] Drive file info
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, // [1]-[9] padding
+		2, // [10] source category marker
+	}
+
+	resp, err := c.rpc.Do(rpc.Call{
+		ID:         rpc.RPCAddSources,
+		NotebookID: projectID,
+		Args: []interface{}{
+			[]interface{}{perSource}, // sources array
+			projectID,
+		},
+	})
+	if err != nil {
+		return "", fmt.Errorf("add source from Drive: %w", err)
 	}
 
 	sourceID, err := extractSourceID(resp)
@@ -2306,6 +2360,15 @@ func driveSourceMIMEType(sourceType int) string {
 	default:
 		return "application/pdf" // Safe default for Drive files
 	}
+}
+
+// isDriveFileURL returns true if the URL is a Google Drive file URL (drive.google.com/file/d/
+// or drive.google.com/open?id=) as opposed to a native Google Workspace URL (docs/sheets/slides).
+// Native Google Workspace URLs (docs.google.com, sheets.google.com, slides.google.com)
+// work with the regular web URL format in izAoDd and should NOT be routed through AddSourceFromDrive.
+func isDriveFileURL(rawURL string) bool {
+	return strings.Contains(rawURL, "drive.google.com/file/d/") ||
+		strings.Contains(rawURL, "drive.google.com/open?id=")
 }
 
 // extractDriveFileID extracts the file ID from various Google Drive URL formats.
