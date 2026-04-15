@@ -47,6 +47,7 @@ var (
 	showChatHistory   bool   // Show previous chat conversation on start
 	showThinking      bool   // Show thinking headers while streaming responses
 	verbose           bool   // Show full thinking traces while streaming responses
+	outputFormat      string // Output format for generate-chat: "stream" or "plain"
 )
 
 // ChatSession represents a persistent chat conversation
@@ -93,6 +94,7 @@ func init() {
 	flag.BoolVar(&showThinking, "reasoning", false, "show thinking headers while streaming chat and generate-chat responses")
 	flag.BoolVar(&verbose, "verbose", false, "show full thinking traces while streaming chat and generate-chat responses")
 	flag.BoolVar(&verbose, "v", false, "show full thinking traces while streaming responses (shorthand)")
+	flag.StringVar(&outputFormat, "format", "stream", "output format for generate-chat: stream (default) or plain (clean text only)")
 
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: nlm <command> [arguments]\n\n")
@@ -194,6 +196,10 @@ func init() {
 		fmt.Fprintf(os.Stderr, "  refresh           Refresh authentication credentials\n")
 		fmt.Fprintf(os.Stderr, "  feedback <msg>    Submit feedback\n")
 		fmt.Fprintf(os.Stderr, "  hb                Send heartbeat\n\n")
+
+		fmt.Fprintf(os.Stderr, "Global Flags:\n")
+		fmt.Fprintf(os.Stderr, "  --format stream|plain  Output format for generate-chat (plain: clean text, no progress messages)\n")
+		fmt.Fprintf(os.Stderr, "  --debug                Enable debug output\n\n")
 	}
 }
 
@@ -1013,7 +1019,7 @@ func runCmd(client *api.Client, cmd string, args ...string) error {
 	case "toc":
 		err = actOnSources(client, args[0], "table_of_contents", args[1:])
 	case "generate-chat":
-		err = generateFreeFormChat(client, args[0], strings.Join(args[1:], " "))
+		err = generateFreeFormChat(client, args[0], strings.Join(args[1:], " "), outputFormat)
 	case "chat":
 		if len(args) >= 2 {
 			rest := strings.Join(args[1:], " ")
@@ -1856,8 +1862,10 @@ func isTerminal(f *os.File) bool {
 }
 
 // Generation operations
-func generateFreeFormChat(c *api.Client, projectID, prompt string) error {
-	fmt.Fprintf(os.Stderr, "Generating response for: %s\n", prompt)
+func generateFreeFormChat(c *api.Client, projectID, prompt, format string) error {
+	if format != "plain" {
+		fmt.Fprintf(os.Stderr, "Generating response for: %s\n", prompt)
+	}
 
 	answer, _, err := streamChatResponse(c, api.ChatRequest{
 		ProjectID: projectID,
@@ -1868,7 +1876,7 @@ func generateFreeFormChat(c *api.Client, projectID, prompt string) error {
 	}
 	if answer != "" {
 		fmt.Println()
-	} else {
+	} else if format != "plain" {
 		fmt.Println("(No response received)")
 	}
 
