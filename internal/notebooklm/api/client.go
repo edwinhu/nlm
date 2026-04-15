@@ -698,6 +698,16 @@ func (c *Client) AddSourceFromURL(projectID string, url string) (string, error) 
 		return c.AddYouTubeSource(projectID, videoID)
 	}
 
+	// Check if it's a Google Drive file URL (not native Google Workspace docs).
+	// Drive files like uploaded PDFs need a different RPC payload format.
+	if isDriveFileURL(url) {
+		fileID := extractDriveFileID(url)
+		if fileID == "" {
+			return "", fmt.Errorf("could not extract file ID from Drive URL: %s", url)
+		}
+		return c.AddSourceFromDrive(projectID, fileID)
+	}
+
 	// Regular URL handling
 	resp, err := c.rpc.Do(rpc.Call{
 		ID:         rpc.RPCAddSources,
@@ -3850,4 +3860,70 @@ func (c *Client) PollDeepResearch(projectID, researchID string) (*DeepResearchRe
 		result.Content = string(resp)
 	}
 	return result, nil
+}
+
+// AddSourceFromDrive adds a Google Drive file (PDF, DOCX, etc.) as a source using the
+// Drive-specific per-source format for the izAoDd (AddSources) RPC.
+func (c *Client) AddSourceFromDrive(projectID, fileID string) (string, error) {
+	if c.rpc.Config.Debug {
+		fmt.Printf("=== AddSourceFromDrive ===\n")
+		fmt.Printf("Project ID: %s\n", projectID)
+		fmt.Printf("File ID: %s\n", fileID)
+	}
+
+	mimeType := "application/pdf"
+	title := fileID
+
+	perSource := []interface{}{
+		[]interface{}{fileID, mimeType, 1, title},
+		nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		2,
+	}
+
+	resp, err := c.rpc.Do(rpc.Call{
+		ID:         rpc.RPCAddSources,
+		NotebookID: projectID,
+		Args: []interface{}{
+			[]interface{}{perSource},
+			projectID,
+		},
+	})
+	if err != nil {
+		return "", fmt.Errorf("add source from Drive: %w", err)
+	}
+
+	sourceID, err := extractSourceID(resp)
+	if err != nil {
+		return "", fmt.Errorf("extract source ID: %w", err)
+	}
+	return sourceID, nil
+}
+
+// isDriveFileURL returns true if the URL is a Google Drive file URL
+// as opposed to a native Google Workspace URL (docs/sheets/slides).
+func isDriveFileURL(rawURL string) bool {
+	return strings.Contains(rawURL, "drive.google.com/file/d/") ||
+		strings.Contains(rawURL, "drive.google.com/open?id=")
+}
+
+// extractDriveFileID extracts the file ID from various Google Drive URL formats.
+func extractDriveFileID(rawURL string) string {
+	if idx := strings.Index(rawURL, "open?id="); idx >= 0 {
+		return rawURL[idx+8:]
+	}
+	if idx := strings.Index(rawURL, "/file/d/"); idx >= 0 {
+		id := rawURL[idx+8:]
+		if slashIdx := strings.Index(id, "/"); slashIdx >= 0 {
+			return id[:slashIdx]
+		}
+		return id
+	}
+	if idx := strings.Index(rawURL, "/d/"); idx >= 0 {
+		id := rawURL[idx+3:]
+		if slashIdx := strings.Index(id, "/"); slashIdx >= 0 {
+			return id[:slashIdx]
+		}
+		return id
+	}
+	return ""
 }
