@@ -43,6 +43,7 @@ nlm sources <notebook-id>                          # list sources
 nlm add <notebook-id> https://example.com          # add URL source
 nlm add <notebook-id> document.pdf                 # add file source
 nlm add <notebook-id> --text "Title" "Content"     # add text source
+nlm add <notebook-id> https://drive.google.com/file/d/FILE_ID/view  # add Drive file
 nlm rm-source <notebook-id> <source-id>            # remove source
 ```
 
@@ -79,6 +80,9 @@ nlm video-list <notebook-id>           # list video overviews
 nlm chat <notebook-id>                          # interactive chat session
 nlm chat <notebook-id> "What is this about?"    # one-shot question
 nlm generate-chat <notebook-id> "summarize"     # free-form generation
+
+# Clean output for piping/scripting
+nlm --format plain generate-chat <notebook-id> "summarize in one paragraph"
 ```
 
 ### Content Transformation
@@ -141,6 +145,7 @@ Available MCP tools: `list_notebooks`, `list_sources`, `list_notes`, `list_artif
 -cookies string    Browser cookies (SID, HSID, SSID)
 -authuser int      Google account index (default 0)
 -debug             Enable debug output
+-format string     Output format for generate-chat: stream (default) or plain
 -direct-rpc        Use direct RPC calls (required for some commands)
 -y                 Skip confirmation prompts
 ```
