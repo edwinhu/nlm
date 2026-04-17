@@ -423,60 +423,57 @@ func (c *Client) AddSourceFromBase64(projectID string, content, filename, conten
 	return sourceID, nil
 }
 
-// uploadFileSource uploads a binary file using Google's Resumable Upload Protocol,
-// then registers the uploaded file as a source in the notebook.
-//
-// The protocol has three steps:
-//  1. Start upload: POST to /upload/_/ with metadata, get back an upload URL
-//  2. Upload bytes: POST raw file bytes to the upload URL
-//  3. Register source: RPC o4cbdc to associate the uploaded file with the notebook
+// uploadFileSource uploads a binary file using Google's Resumable Upload Protocol.
+// HAR-verified browser flow:
+//  1. Register source (o4cbdc) — server creates tentative queue entry, returns source_id
+//  2. Start resumable upload — metadata carries the server-returned source_id
+//  3. Upload raw file bytes with finalize
+//  4. Process the source (generate document guides)
 func (c *Client) uploadFileSource(projectID, filename string, content []byte) (string, error) {
-	sourceID := uuid.New().String()
-
 	if c.config.Debug {
 		fmt.Fprintf(os.Stderr, "DEBUG: uploading file %q (%d bytes) via resumable upload\n", filename, len(content))
-		fmt.Fprintf(os.Stderr, "DEBUG: generated source ID: %s\n", sourceID)
 	}
 
-	// Step 1: Start the resumable upload session
+	// Step 1: Register source first — server creates tentative queue entry and returns source_id
+	sourceID, err := c.registerFileSource(projectID, filename, "")
+	if err != nil {
+		return "", fmt.Errorf("register file source: %w", err)
+	}
+	if c.config.Debug {
+		fmt.Fprintf(os.Stderr, "DEBUG: server-registered source ID: %s\n", sourceID)
+	}
+
+	// Step 2: Start the resumable upload session using the server-returned source ID
 	uploadURL, err := c.startResumableUpload(projectID, filename, sourceID, len(content))
 	if err != nil {
 		return "", fmt.Errorf("start upload: %w", err)
 	}
-
 	if c.config.Debug {
 		fmt.Fprintf(os.Stderr, "DEBUG: got upload URL: %s\n", uploadURL)
 	}
 
-	// Step 2: Upload the file bytes
+	// Step 3: Upload the file bytes
 	if err := c.uploadFileBytes(uploadURL, content); err != nil {
 		return "", fmt.Errorf("upload file bytes: %w", err)
 	}
-
 	if c.config.Debug {
 		fmt.Fprintf(os.Stderr, "DEBUG: file bytes uploaded successfully\n")
 	}
 
-	// Step 3: Register the uploaded file as a source via RPC
-	registeredID, err := c.registerFileSource(projectID, filename, sourceID)
-	if err != nil {
-		return "", fmt.Errorf("register file source: %w", err)
-	}
-
 	// Step 4: Process the source (generate document guides)
-	if err := c.processFileSource(registeredID); err != nil {
+	if err := c.processFileSource(sourceID); err != nil {
 		if c.config.Debug {
 			fmt.Fprintf(os.Stderr, "DEBUG: process source warning: %v\n", err)
 		}
 		// Non-fatal: source is registered but processing may happen async
 	}
 
-	return registeredID, nil
+	return sourceID, nil
 }
 
 // startResumableUpload initiates a resumable upload session and returns the upload URL.
 func (c *Client) startResumableUpload(projectID, filename, sourceID string, contentLength int) (string, error) {
-	// Build metadata payload: base64-encoded JSON
+	// Build metadata payload: plain JSON (HAR-verified — browser does NOT base64-encode)
 	metadata := map[string]string{
 		"PROJECT_ID":  projectID,
 		"SOURCE_NAME": filename,
@@ -486,10 +483,9 @@ func (c *Client) startResumableUpload(projectID, filename, sourceID string, cont
 	if err != nil {
 		return "", fmt.Errorf("marshal metadata: %w", err)
 	}
-	metadataB64 := base64.StdEncoding.EncodeToString(metadataJSON)
 
 	uploadInitURL := "https://notebooklm.google.com/upload/_/?authuser=" + c.authUserOrDefault()
-	req, err := http.NewRequest("POST", uploadInitURL, strings.NewReader(metadataB64))
+	req, err := http.NewRequest("POST", uploadInitURL, bytes.NewReader(metadataJSON))
 	if err != nil {
 		return "", fmt.Errorf("create request: %w", err)
 	}
@@ -511,8 +507,7 @@ func (c *Client) startResumableUpload(projectID, filename, sourceID string, cont
 
 	if c.config.Debug {
 		fmt.Fprintf(os.Stderr, "DEBUG: upload init URL: %s\n", uploadInitURL)
-		fmt.Fprintf(os.Stderr, "DEBUG: upload init body: %s\n", metadataB64)
-		fmt.Fprintf(os.Stderr, "DEBUG: upload init decoded: %s\n", string(metadataJSON))
+		fmt.Fprintf(os.Stderr, "DEBUG: upload init body: %s\n", string(metadataJSON))
 		for k, v := range req.Header {
 			if k != "Cookie" { // Don't dump cookies
 				fmt.Fprintf(os.Stderr, "DEBUG: upload init header %s: %v\n", k, v)
@@ -587,8 +582,10 @@ func (c *Client) uploadFileBytes(uploadURL string, content []byte) error {
 	return nil
 }
 
-// registerFileSource registers an uploaded file as a notebook source via RPC.
-func (c *Client) registerFileSource(projectID, filename, sourceID string) (string, error) {
+// registerFileSource registers a file source via RPC o4cbdc. The server creates
+// a tentative queue entry keyed by filename and returns the server-assigned source_id.
+// The sourceID parameter is unused (kept for back-compat in case callers still pass one).
+func (c *Client) registerFileSource(projectID, filename, _ string) (string, error) {
 	resp, err := c.rpc.Do(rpc.Call{
 		ID:         rpc.RPCAddFileSource,
 		NotebookID: projectID,
@@ -608,14 +605,13 @@ func (c *Client) registerFileSource(projectID, filename, sourceID string) (strin
 		return "", fmt.Errorf("register file source RPC: %w", err)
 	}
 
+	if c.config.Debug {
+		fmt.Fprintf(os.Stderr, "DEBUG: register response: %s\n", string(resp))
+	}
+
 	registeredID, err := extractSourceID(resp)
 	if err != nil {
-		// If we can't extract an ID from the response, use the one we generated
-		if c.config.Debug {
-			fmt.Fprintf(os.Stderr, "DEBUG: could not extract source ID from register response, using generated ID\n")
-			fmt.Fprintf(os.Stderr, "DEBUG: register response: %s\n", string(resp))
-		}
-		return sourceID, nil
+		return "", fmt.Errorf("extract server source ID from register response: %w (response: %s)", err, string(resp))
 	}
 	return registeredID, nil
 }

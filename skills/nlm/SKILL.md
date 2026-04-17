@@ -53,9 +53,8 @@ txtar-c -quote dir/ 2>/dev/null | nlm add <notebook-id> - --name "project: dir/"
 nlm rename-source <source-id> "descriptive name"
 ```
 
-**Binary upload workarounds** — if PDF/plist upload fails with 500:
+**PDF uploads** work directly (fork fix): `nlm add <notebook-id> paper.pdf`. For other binary formats or as a fallback, extract to text first:
 ```bash
-pdftotext paper.pdf - | nlm add <notebook-id> -
 plutil -convert xml1 -o - file.plist | nlm add <notebook-id> -
 ```
 
@@ -78,4 +77,4 @@ nlm --direct-rpc video-download <id> output.mp4
 | "Authentication required" | Run `nlm auth` |
 | "Service unavailable" on upload | Retry after a few seconds (rate limit) |
 | "Failed precondition" | Convert binary to text first (see above) |
-| "upload init failed (status 500)" | Try text extraction workaround |
+| "upload init failed (status 500)" | Rebuild from latest — fixed in v0.1.0 |
